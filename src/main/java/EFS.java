@@ -1,7 +1,6 @@
 import java.io.File;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Random;
 
@@ -14,6 +13,7 @@ public class EFS extends Utility{
     
     private int MAX_USERNAME_LENGTH = 128;
     private int SALT_LENGTH = 16;
+    private int FEK_LENGTH = 16;
     private Charset PASSWORD_CHAR_SET = StandardCharsets.US_ASCII;
     
     /**
@@ -95,6 +95,19 @@ public class EFS extends Utility{
     public byte[] getKeyFromPassword(String password) {
         return null;
     }
+    
+    public String padStringToMultipleOf(String message, int base) {
+        while (message.length() % base != 0) {
+            message += "\0";
+        }
+        return message;
+    }
+    
+    public byte[] getKeyFromPassword(String password, byte[] passwordHash) {
+        byte[] key = new byte[FEK_LENGTH];
+        System.arraycopy(passwordHash, 0, key, 0, FEK_LENGTH);
+        return key;
+    }
 
     public EFS(Editor e)
     {
@@ -120,33 +133,51 @@ public class EFS extends Utility{
 
         if (dir.mkdir()) {
             // This is a new file...
-            // Metadata will be stored in first physical file.
-            File metadata = new File(dir, "0");
-            byte[] contents = "\0".getBytes();
             
-            // Header
-            String paddedUsername = getPaddedUsername(user_name);
-            String salt = getNewPasswordSalt();
-            byte[] header = (paddedUsername + salt).getBytes();
-            
-            // Secret data
-            byte[] passwordHash = getPasswordHash(password, salt);
-            int length = 0;
-            String secretData = passwordHash.toString() + "\n" + length;
-            
-            // Encrypted secret data
-            byte[] encryptedMetadata = encript_AES(secretData.getBytes(), passwordHash);
-            
-            // Tag
-            byte[] hmac = "FIXME".getBytes();
-            
-            byte[] toWrite = new byte[header.length + encryptedMetadata.length + hmac.length];
-            System.arraycopy(header, 0, toWrite, 0, header.length);
-            System.arraycopy(encryptedMetadata, 0, toWrite, header.length, encryptedMetadata.length);
-            System.arraycopy(hmac, 0, toWrite, header.length + encryptedMetadata.length, hmac.length);
-
-            save_to_file(toWrite, metadata);
-            return;
+            try {
+                // Metadata will be stored in first physical file.
+                File metadataFile = new File(dir, "0");
+                
+                // Initialize the entire metadata block
+                
+                
+                // Header = MAX_USERNAME_LENGTH + SALT_LENGTH bytes
+                byte[] metadata = new byte[MAX_USERNAME_LENGTH + SALT_LENGTH + ]
+                String paddedUsername = getPaddedUsername(user_name);
+                String salt = getNewPasswordSalt();
+                byte[] header = (paddedUsername + salt).getBytes();
+                
+                // Secret data
+                byte[] passwordHash = getPasswordHash(password, salt);
+                byte[] fek = secureRandomNumber(FEK_LENGTH);
+                byte[] messageLength = longToBytes(0);
+                byte[] secretData = new byte[passwordHash.length + fek.length + messageLength.length];
+                System.arraycopy(passwordHash,  0, secretData, 0,                                passwordHash.length);
+                System.arraycopy(fek,           0, secretData, passwordHash.length,              fek.length);
+                System.arraycopy(messageLength, 0, secretData, passwordHash.length + fek.length, messageLength.length);
+                
+                // Pad the array to a multiple of FEK_LENGTH
+                
+                secretData = padArrayToMultipleOf(secretData, FEK_LENGTH);
+                
+                // Encrypted secret data
+                byte[] key = getKeyFromPassword(password, passwordHash);
+                byte[] encryptedMetadata = encript_AES(secretData.getBytes(), key);
+                
+                // Tag
+                byte[] hmac = "FIXME".getBytes();
+                
+                byte[] toWrite = new byte[header.length + encryptedMetadata.length + hmac.length];
+                System.arraycopy(header, 0, toWrite, 0, header.length);
+                System.arraycopy(encryptedMetadata, 0, toWrite, header.length, encryptedMetadata.length);
+                System.arraycopy(hmac, 0, toWrite, header.length + encryptedMetadata.length, hmac.length);
+    
+                save_to_file(toWrite, metadataFile);
+            } catch (Exception e) {
+                // Remove the directory
+                dir.delete();
+                throw e;
+            }
         }
     }
 
@@ -158,12 +189,15 @@ public class EFS extends Utility{
     @Override
     public String findUser(String file_name) throws Exception {
         byte[] metadata = getFileMetadata(file_name);
+        String username = null;
         
         if (metadata != null) {
-            return byteArray2String(Arrays.copyOfRange(metadata, 0, MAX_USERNAME_LENGTH));
-        } else {
-            return null;
+            // Find the first zero byte
+            int i;
+            for (i = 0; i < metadata.length && metadata[i] != 0; i++) {}
+            username = new String(metadata, 0, i, PASSWORD_CHAR_SET);
         }
+        return username;
     }
 
     /**
@@ -176,10 +210,13 @@ public class EFS extends Utility{
     @Override
     public int length(String file_name, String password) throws Exception {
         byte[] metadata = getFileMetadata(file_name);
+        int length = 0;
         
         if (metadata != null) {
-            /*byte[] salt = getSaltFromMetadata(metadata);
+            byte[] salt = getSaltFromMetadata(metadata);
             byte[] key = getKeyFromPassword(password);
+            
+            byte[] plaintext = decript_AES(Arrays.copyOfRange(MAX_USERNAME_LENGTH + SALT_LENGTH, length, length), key);
             byte[] ciphertext = getSecretFromMetadata(metadata);
             byte[] header = decript_AES(ciphertext, key);
             byte[] passwordHash = getPasswordHashFromHeader(header);
@@ -188,10 +225,8 @@ public class EFS extends Utility{
                 throw new PasswordIncorrectException();
             }*/
             
-        } else {
-            throw new PasswordIncorrectException();
         }
-        return 0;
+        return length;
     }
 
     /**

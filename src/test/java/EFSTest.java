@@ -1,3 +1,4 @@
+import java.io.File;
 import java.nio.charset.StandardCharsets;
 
 import junit.framework.Test;
@@ -8,6 +9,19 @@ import junit.framework.TestSuite;
  * Unit test for simple App.
  */
 public class EFSTest extends TestCase {
+    
+    private void deleteDirectory(String dirname) {
+        File dir = new File(dirname);
+        
+        if (dir.exists()) {
+            for (File file : dir.listFiles()) {
+                file.delete();
+            }
+            dir.delete();
+        }
+    }
+    
+    
     /**
      * Create the test case
      *
@@ -81,16 +95,43 @@ public class EFSTest extends TestCase {
         for (int i = 0; i < hash1.length; i++) {
             assertEquals(hash1[i], hash2[i]);
         }
+
+       assertEquals(hash1.length, 64);
     }
     
     public void testCreate() {
         EFS efs = new EFS(null);
+        String filename = "testFile.txt";
         
         try {
-            efs.create("testFile.txt", "hxs200010", "MyPassword");
+            efs.create(filename, "hxs200010", "MyPassword");
         } catch (Exception e) {
             System.out.println(e.getMessage());
             fail();
+        } finally {
+            deleteDirectory(filename);            
+        }
+    }
+    
+    public void testFindUser() {
+        EFS efs = new EFS(null);
+        String filename = "testFindUser.txt";
+        
+        try {
+            String result = efs.findUser("someuser");
+            assertEquals(result, null);
+            
+            String username = "hxs200010";
+            String password = "MyP@$$W0Rd!23";
+            efs.create(filename, username, password);
+            
+            String foundUser = efs.findUser(filename);
+            assertTrue(foundUser.equals(username));
+            
+        } catch (Exception e) {
+            System.out.println(e);
+        } finally {
+            deleteDirectory(filename);
         }
     }
 }
