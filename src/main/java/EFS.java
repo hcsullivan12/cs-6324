@@ -4,12 +4,13 @@ import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Random;
 import java.util.logging.FileHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
-import java.util.logging.StreamHandler;
 
 /**
  * @author Hunter Sullivan
@@ -24,11 +25,26 @@ public class EFS extends Utility {
         SHA512
     }
     
+    /**
+     *  This enum aligns with the format of the metadata. 
+     */
+    public static enum MetadataField {
+        USERNAME,
+        SALT,
+        PASSWORD_HASH,
+        FEK,
+        FILE_SIZE,
+        METADATA_DIGEST,
+        FILE_DIGEST
+    }
+
+    // Members to set the underlying hash algorithms
     private HashAlg PASSWORD_HASH_ALG = HashAlg.SHA256;
     private HashAlg METADATA_DIGEST_ALG = HashAlg.SHA256;
     private HashAlg FILE_DIGEST_ALG = HashAlg.SHA256;
     private HashAlg PBKDF2_HASH_ALG = HashAlg.SHA256;
     
+    // Members to set the size of various encryption parameters.
     private int N_USERNAME_BYTES = 128;
     private int N_SALT_BYTES = 16;
     private int N_FEK_BYTES = 16;
@@ -36,15 +52,20 @@ public class EFS extends Utility {
     private int AES_BLOCK_SIZE = 128;
     private int N_PBDFK2_ITERATIONS = 1000;
     private int DERIVED_KEY_LENGTH = 256;    // setting to same output length of SHA
+
+    // This will be used for faster access to metadata field positions.
+    private Map<MetadataField, Integer> metadataFieldPositionMap = new HashMap<MetadataField, Integer>();
     
     private Charset CHARACTER_SET = StandardCharsets.US_ASCII;
-    private ByteBuffer intByteBuffer = ByteBuffer.allocate(Integer.BYTES);
     private Logger logger = Logger.getLogger(EFS.class.getName()); 
+    
+    //////////////////////////////////////////////////////////////////////
+    // BEGIN helper functions for hash algorithms.
     
     /**
      * Get the hash alg block size in bytes.
-     * @param h
-     * @return
+     * @param h Hash alg
+     * @return number of bytes
      * @throws Exception
      */
     public int getHashBlockSize(HashAlg h) throws Exception {
@@ -60,8 +81,8 @@ public class EFS extends Utility {
     
     /**
      * Get the hash alg output size in bytes.
-     * @param h
-     * @return
+     * @param h Hash alg
+     * @return number of bytes
      * @throws Exception
      */
     public int getHashOutputSize(HashAlg h) throws Exception {
@@ -76,44 +97,10 @@ public class EFS extends Utility {
     }
     
     /**
-     * Get the size of the secret metadata in bytes.
-     * @return number of bytes.
-     */
-    public int getEncryptedSecretMetadataSize() throws Exception {
-        // The encryption algorithm requires the message size to be multiple of the key.
-        int result = getHashOutputSize(PASSWORD_HASH_ALG) + N_FEK_BYTES + N_LENGTH_BYTES;
-
-        while (result % N_FEK_BYTES != 0)
-        {
-            result += 1;
-        }
-
-        return result;
-    }
-    
-    /**
-     * Computes the size of the entire plaintext metadata block in bytes.
-     * @return number of bytes
-     * @throws Exception
-     */
-    public int getMetadataSize() throws Exception {
-        return N_USERNAME_BYTES + N_SALT_BYTES + getHashOutputSize(PASSWORD_HASH_ALG) + N_FEK_BYTES + N_LENGTH_BYTES + getHashOutputSize(METADATA_DIGEST_ALG) + getHashOutputSize(FILE_DIGEST_ALG);
-    }
-    
-    /**
-     * Returns the number of bytes in the plaintext secret metadata section.
-     * @return number of bytes
-     * @throws Exception
-     */
-    public int getPlaintextSecretMetadataSize() throws Exception {
-        return getHashOutputSize(PASSWORD_HASH_ALG) + N_FEK_BYTES + N_LENGTH_BYTES;
-    }
-    
-    /**
-     * Compute hash.
-     * @param key
-     * @param hashAlg
-     * @return
+     * Hash byte array using specific hash algorithm.
+     * @param key the thing to hash
+     * @param hashAlg the hash algorithm
+     * @return hash byte array
      * @throws Exception
      */
     public byte[] computeHash(byte[] key, HashAlg hashAlg) throws Exception {
@@ -127,6 +114,192 @@ public class EFS extends Utility {
             throw new Exception("Unsupported hash alg: "+ hashAlg);
         }
     }
+    
+    /**
+     * Hash the password.
+     * @param password
+     * @param salt
+     * @return Hash of the password as byte array.
+     */
+    public byte[] getPasswordHash(String password, String salt) throws Exception {
+        String message = password + salt;
+        return computeHash(message.getBytes(CHARACTER_SET), PASSWORD_HASH_ALG);
+    }
+    
+    // END helper functions for hash algorithms
+    //////////////////////////////////////////////////////////////////////
+    
+    //////////////////////////////////////////////////////////////////////
+    // BEGIN metadata access and info functions
+    
+    /**
+     * Retrieve field from metadata.
+     * @param metadata The metadata
+     * @param field The field to retrieve
+     * @param isEncrypted Does the metadata contain encrypted data?
+     * @return The field as byte array
+     */
+    public byte[] getMetadataField(byte[] metadata, MetadataField field, boolean isEncrypted) throws Exception {
+        
+        int startIndex = metadataFieldPositionMap.get(field);
+        
+        if (field == MetadataField.USERNAME) {
+            return Arrays.copyOfRange(metadata, startIndex, startIndex + N_USERNAME_BYTES);
+            
+        } else if (field == MetadataField.SALT) {
+            return Arrays.copyOfRange(metadata, startIndex, startIndex + N_SALT_BYTES);
+            
+        } else if (field == MetadataField.PASSWORD_HASH) {
+            logger.warning("Retrieving password hash from encrypted data.");
+            return Arrays.copyOfRange(metadata, startIndex, startIndex + getHashOutputSize(PASSWORD_HASH_ALG));
+            
+        } else if (field == MetadataField.FEK) {
+            logger.warning("Retrieving FEK from encrypted data.");
+            return Arrays.copyOfRange(metadata, startIndex, startIndex + N_FEK_BYTES);
+            
+        } else if (field == MetadataField.FILE_SIZE) {
+            logger.warning("Retrieving file size from encrypted data.");
+            return Arrays.copyOfRange(metadata, startIndex, startIndex + N_LENGTH_BYTES);
+            
+        } 
+        
+        if (!isEncrypted) {
+            
+            if (field == MetadataField.METADATA_DIGEST) {
+                return Arrays.copyOfRange(metadata, startIndex, startIndex + getHashOutputSize(METADATA_DIGEST_ALG));
+                
+            } else if (field == MetadataField.FILE_DIGEST) {
+                return Arrays.copyOfRange(metadata, startIndex, startIndex + getHashOutputSize(FILE_DIGEST_ALG));
+            }
+            
+        } else {
+            // We must account for the extra padding of the secret data...
+            startIndex = metadataFieldPositionMap.get(MetadataField.PASSWORD_HASH) + getSecretMetadataSize(true);
+            
+            if (field == MetadataField.METADATA_DIGEST) {
+                return Arrays.copyOfRange(metadata, startIndex, startIndex + getHashOutputSize(METADATA_DIGEST_ALG));
+                
+            } else if (field == MetadataField.FILE_DIGEST) {
+                return Arrays.copyOfRange(metadata, startIndex, startIndex + getHashOutputSize(FILE_DIGEST_ALG));
+            }
+        }
+        
+        logger.warning("Could not retrieve metadata field " + field + " from metadata.");
+        return null; // we should never reach this
+    }
+    
+    /**
+     * Get the size of the secret metadata in bytes. This accounts for any padding.
+     * Note, the size will depend on whether the data is encrypted or not.
+     * @param isEncrypted
+     * @return number of bytes
+     */
+    public int getSecretMetadataSize(boolean isEncrypted) throws Exception {
+        int result = getHashOutputSize(PASSWORD_HASH_ALG) + N_FEK_BYTES + N_LENGTH_BYTES;
+        
+        if (isEncrypted)
+        {
+            // AES requires the message size to be a multiple of the key size.
+            // Account for the extra padding
+            while (result % N_FEK_BYTES != 0)
+            {
+                result += 1;
+            }
+        } 
+
+        return result;
+    }
+    
+    /**
+     * Computes the size of the entire plaintext metadata block in bytes.
+     * @param isEncrypted 
+     * @return number of bytes
+     * @throws Exception
+     */
+    public int getMetadataSize(boolean isEncrypted) throws Exception {
+        return N_USERNAME_BYTES + N_SALT_BYTES + getSecretMetadataSize(isEncrypted) + getHashOutputSize(METADATA_DIGEST_ALG) + getHashOutputSize(FILE_DIGEST_ALG);
+    }
+    
+    /**
+     * Fetch file metadata.
+     * @param filename
+     * @return Metadata as byte array.
+     * @throws Exception
+     */
+    public byte[] getFileMetadata(String filename) throws Exception {
+        dir = new File(filename);
+        File file = new File(dir, "0");
+        
+        if (file.exists()) {
+            byte[] contents = read_from_file(file);
+            return Arrays.copyOfRange(contents, 0, getMetadataSize(true));
+        } else {
+            return null;
+        }
+    }
+    
+    /**
+     * Decrypt the file metadata.
+     * @param metadata The file's metadata
+     * @param password The password
+     * @return Full, plaintext metadata, including header, secrets, and digests.
+     */
+    public byte[] decryptMetadata(byte[] metadata, String password) throws Exception {
+        logger.info("ENTRY decryptMetadata");
+
+        int nCiphertextSecretBytes = getSecretMetadataSize(true);
+        int nPlaintextSecretBytes  = getSecretMetadataSize(false);
+        int nTotalPlaintextBytes   = getMetadataSize(false);
+        
+        logger.fine("Fetching salt...");
+        byte[] salt = getMetadataField(metadata, MetadataField.SALT, true);
+        
+        logger.info("Deriving key from password...");
+        byte[] derivedkey = compute_PBKDF2(password.getBytes(CHARACTER_SET), salt, N_PBDFK2_ITERATIONS, DERIVED_KEY_LENGTH, PBKDF2_HASH_ALG);
+        
+        // Only a portion of the metadata is encrypted...
+        logger.fine("Decrypting secret metadata section...");
+        int startIndex = metadataFieldPositionMap.get(MetadataField.PASSWORD_HASH);
+        int endIndex = startIndex + nCiphertextSecretBytes;
+        
+        byte[] encryptedMetadata = Arrays.copyOfRange(metadata, startIndex, endIndex);
+        byte[] secrets = decryptByteArray(encryptedMetadata, derivedkey);
+        
+        // Copy to new array.
+        byte[] result = new byte[nTotalPlaintextBytes];
+        System.arraycopy(metadata, 0, result, 0,          startIndex);            // copy plaintext header
+        System.arraycopy(secrets,  0, result, startIndex, nPlaintextSecretBytes); // copy plaintext secrets, ignoring the extra padding
+        System.arraycopy(metadata, 0, result, startIndex + nPlaintextSecretBytes, metadata.length - endIndex); // copy the remaining contents of the metadata
+        
+        return result;
+    }
+    
+    /**
+     * Checks if the password hash matches the stored hash.
+     * @param metadata Plaintext metadata.
+     * @param password
+     * @return true if the hashes match, false otherwise.
+     */
+    public boolean isCorrectPassword(byte[] metadata, String password) throws Exception {
+        
+        // Get salt and hash the password
+        boolean isEncrypted = false;
+        byte[] salt = getMetadataField(metadata, MetadataField.SALT, true);
+        byte[] passwordHash = getPasswordHash(password, new String(salt, CHARACTER_SET));
+        byte[] storedPasswordHash = getMetadataField(metadata, MetadataField.PASSWORD_HASH, isEncrypted);
+        
+        if (Arrays.equals(passwordHash, storedPasswordHash)) {
+            return true; 
+        } else {
+            return false;
+        }
+    }
+    
+    // END metadata access and info functions
+    //////////////////////////////////////////////////////////////////////
+    
+    //////////////////////////////////////////////////////////////////////
+    // BEGIN Utility functions
     
     /**
      * Pad byte array to fixed size.
@@ -149,16 +322,17 @@ public class EFS extends Utility {
     
     /**
      * Generates new password salt.
-     * @return Byte array ASCII-encoded.
+     * @param length The length of the salt
+     * @return Byte array ASCII-encoded
      */
-    public String getNewPasswordSalt() {
+    public String getNewPasswordSalt(int length) {
         int leftLimit = 33;   // character '!'
         int rightLimit = 126; // letter '~'
         
         Random random = new Random();
-        StringBuilder buffer = new StringBuilder(N_SALT_BYTES);
+        StringBuilder buffer = new StringBuilder(length);
         
-        for (int i = 0; i < N_SALT_BYTES; i++) {
+        for (int i = 0; i < length; i++) {
             int randomLimitedInt = leftLimit + (int) 
               (random.nextFloat() * (rightLimit - leftLimit + 1));
             buffer.append((char) randomLimitedInt);
@@ -172,8 +346,7 @@ public class EFS extends Utility {
      * @return Byte array representation.
      */
     public byte[] integerToBytes(int x) {
-        intByteBuffer.putInt(x);
-        return intByteBuffer.array();
+        return ByteBuffer.allocate(4).putInt(x).array();
     }
     
     /**
@@ -182,76 +355,14 @@ public class EFS extends Utility {
      * @return Int representation.
      */
     public int bytesToInteger(byte[] bytes) {
-        intByteBuffer.put(bytes, 0, bytes.length);
-        intByteBuffer.flip();
-        return intByteBuffer.getInt();
+        return ByteBuffer.wrap(bytes).getInt(); // big-endian by default
     }
     
-    /**
-     * Hash the password.
-     * @param password
-     * @param salt
-     * @return Hash of the password as byte array.
-     */
-    public byte[] getPasswordHash(String password, String salt) throws Exception {
-        String message = password + salt;
-        
-        if (PASSWORD_HASH_ALG == HashAlg.SHA256) {
-            return hash_SHA256(message.getBytes(CHARACTER_SET));
-            
-        } else if (PASSWORD_HASH_ALG == HashAlg.SHA384) {
-            return hash_SHA384(message.getBytes(CHARACTER_SET));
-            
-        } else if (PASSWORD_HASH_ALG == HashAlg.SHA512) {
-            return hash_SHA512(message.getBytes(CHARACTER_SET));
-            
-        } else {
-            throw new Exception("Unsupported hash algorithm: " + PASSWORD_HASH_ALG);
-        }
-    }
+    // END Utility functions
+    //////////////////////////////////////////////////////////////////////
     
-    /**
-     * Fetch salt field from metadata.
-     * @param metadata
-     * @return Salt as byte array.
-     */
-    public byte[] getSaltFromMetadata(byte[] metadata) {
-        byte[] salt = new byte[N_SALT_BYTES];
-        System.arraycopy(metadata, N_USERNAME_BYTES, salt, 0, N_SALT_BYTES);
-        return salt;
-    }
-    
-    /**
-     * Fetch file length field from plaintext metadata.
-     * @param metadata Completely plaintext metadata.
-     * @return length field
-     */
-    public int getLengthFromMetadata(byte[] metadata) throws Exception {
-        int index = getMetadataSize() - getHashOutputSize(METADATA_DIGEST_ALG) - getHashOutputSize(FILE_DIGEST_ALG);
-        byte[] result = new byte[N_LENGTH_BYTES];
-        System.arraycopy(metadata, index, result, 0, N_LENGTH_BYTES);
-        
-        ByteBuffer wrapped = ByteBuffer.wrap(result); // big-endian by default
-        return wrapped.getInt();
-    }
-    
-    /**
-     * Fetch file metadata.
-     * @param filename
-     * @return Metadata as byte array.
-     * @throws Exception
-     */
-    public byte[] getFileMetadata(String filename) throws Exception {
-        dir = new File(filename);
-        File file = new File(dir, "0");
-        
-        if (file.exists()) {
-            byte[] contents = read_from_file(file);
-            return Arrays.copyOfRange(contents, 0, getMetadataSize());
-        } else {
-            return null;
-        }
-    }
+    //////////////////////////////////////////////////////////////////////
+    // BEGIN Encryption/decryption/HMAC/Key derivation algorithms
     
     /**
      * Encrypts plaintext byte array using CTR mode.
@@ -503,65 +614,8 @@ public class EFS extends Utility {
         return compute_PBKDF2(password, salt, niterations, dkLen, HashAlg.SHA512);
     }
     
-    /**
-     * Decrypt the file metadata.
-     * @param metadata The file's metadata
-     * @param password The password
-     * @return Full, plaintext metadata, including header, secrets, and digests.
-     */
-    public byte[] decryptMetadata(byte[] metadata, String password) throws Exception {
-        logger.info("ENTRY decryptMetadata");
-
-        int nSecretBytes = getEncryptedSecretMetadataSize();
-        
-        logger.fine("Fetching salt...");
-        byte[] salt = getSaltFromMetadata(metadata);
-        
-        logger.info("Deriving key from password...");
-        byte[] derivedkey = compute_PBKDF2(password.getBytes(CHARACTER_SET), salt, N_PBDFK2_ITERATIONS, DERIVED_KEY_LENGTH, PBKDF2_HASH_ALG);
-        
-        // Only a portion of the metadata is encrypted...
-        logger.fine("Decrypting secret metadata section...");
-        int startIndex = N_USERNAME_BYTES + N_SALT_BYTES;
-        int endIndex = startIndex + nSecretBytes;
-        
-        byte[] encryptedMetadata = Arrays.copyOfRange(metadata, startIndex, endIndex);
-        byte[] secrets = decryptByteArray(encryptedMetadata, derivedkey);
-        
-        // Copy to new array.
-        // Note, the encrypted metadata section had to be padded for the algorithm,
-        // so there are likely some 0s we need to trim off. The plaintext secret 
-        // section should be HASH + FEK + LENGTH.
-        int plaintextMetadataSize = getMetadataSize();
-        byte[] result = new byte[plaintextMetadataSize];
-        System.arraycopy(metadata, 0, result, 0, startIndex);                               // copy plaintext header
-        System.arraycopy(secrets, 0, result, startIndex, getPlaintextSecretMetadataSize()); // copy plaintext secrets, ignoring the extra padding
-        System.arraycopy(metadata, 0, result, endIndex, metadata.length - endIndex);        // copy the remaining contents of the metadata
-        
-        return result;
-    }
-    
-    /**
-     * Checks if the password hash matches the stored hash.
-     * @param metadata Plaintext metadata.
-     * @param password
-     * @return true if the hashes match, false otherwise.
-     */
-    public boolean isCorrectPassword(byte[] metadata, String password) throws Exception {
-        
-        int hashLength = getHashOutputSize(PASSWORD_HASH_ALG);
-        byte[] salt = getSaltFromMetadata(metadata);
-        byte[] passwordHash = getPasswordHash(password, new String(salt, CHARACTER_SET));
-
-        byte[] storedPasswordHash = new byte[hashLength];
-        System.arraycopy(metadata, N_USERNAME_BYTES + N_SALT_BYTES, storedPasswordHash, 0, hashLength);
-        
-        if (Arrays.equals(passwordHash, storedPasswordHash)) {
-            return true; 
-        } else {
-            return false;
-        }
-    }
+    // END Encryption/decryption/HMAC/Key derivation algorithms
+    //////////////////////////////////////////////////////////////////////
     
     /**
      * EFS constructor.
@@ -589,6 +643,21 @@ public class EFS extends Utility {
             ex.printStackTrace();
         }
         
+        try {
+            // Initialize field position map
+            metadataFieldPositionMap.put(MetadataField.USERNAME, 0);
+            metadataFieldPositionMap.put(MetadataField.SALT,          metadataFieldPositionMap.get(MetadataField.USERNAME) + N_USERNAME_BYTES);
+            metadataFieldPositionMap.put(MetadataField.PASSWORD_HASH, metadataFieldPositionMap.get(MetadataField.SALT) + N_SALT_BYTES);
+            metadataFieldPositionMap.put(MetadataField.FEK,           metadataFieldPositionMap.get(MetadataField.PASSWORD_HASH) + getHashOutputSize(PASSWORD_HASH_ALG));
+            metadataFieldPositionMap.put(MetadataField.FILE_SIZE,     metadataFieldPositionMap.get(MetadataField.FEK) + N_FEK_BYTES);
+            metadataFieldPositionMap.put(MetadataField.METADATA_DIGEST, metadataFieldPositionMap.get(MetadataField.FILE_SIZE) + N_LENGTH_BYTES);
+            metadataFieldPositionMap.put(MetadataField.FILE_DIGEST,     metadataFieldPositionMap.get(MetadataField.METADATA_DIGEST) + getHashOutputSize(METADATA_DIGEST_ALG));
+            
+        } catch (Exception ex) {
+            logger.severe("Failed to initialize field position map: " + ex.getMessage());
+            ex.printStackTrace();
+        }
+        
         // Set username and password
         //set_username_password();
     }
@@ -598,7 +667,7 @@ public class EFS extends Utility {
      */
     @Override
     public void create(String file_name, String user_name, String password) throws Exception {
-        logger.fine("ENTRY create " + file_name + " " + user_name + " " + password);
+        logger.fine("ENTRY create " + file_name + " " + user_name);
         
         dir = new File(file_name);
         
@@ -612,28 +681,29 @@ public class EFS extends Utility {
                 
                 //################
                 // Begin header section...
-
-                byte[] header = new byte[ N_USERNAME_BYTES + N_SALT_BYTES ];
-                logger.fine("Username = " + N_USERNAME_BYTES + " bytes, salt = " + N_SALT_BYTES + " bytes, header size = " + header.length + " bytes.");
                 
-                // Add the username
                 if (user_name.length() > N_USERNAME_BYTES) {
                     String msg = "Username longer than " + N_USERNAME_BYTES + " bytes.";
                     logger.severe(msg);
                     throw new Exception(msg);
                 }
+
+                byte[] header = new byte[ N_USERNAME_BYTES + N_SALT_BYTES ];
+                logger.fine("Username = " + N_USERNAME_BYTES + " bytes, salt = " + N_SALT_BYTES + " bytes, header size = " + header.length + " bytes.");
+                
+                // Add the username
                 System.arraycopy(user_name.getBytes(CHARACTER_SET), 0, header, 0, user_name.length());
                 
                 // Add the salt
                 logger.fine("Generating new salt...");
-                String salt = getNewPasswordSalt();
+                String salt = getNewPasswordSalt(N_SALT_BYTES);
                 logger.fine("Salt = " + salt.length() + " bytes.");
                 System.arraycopy(salt.getBytes(CHARACTER_SET), 0, header, N_USERNAME_BYTES, N_SALT_BYTES);
                 
                 //################
                 // Begin secret section...
                 
-                int nSecretBytes = getEncryptedSecretMetadataSize();
+                int nEncryptedBytes = getSecretMetadataSize(true);
                 
                 logger.fine("Hashing password...");
                 byte[] passwordHash = getPasswordHash(password, salt);
@@ -647,7 +717,7 @@ public class EFS extends Utility {
                 logger.fine("File length = " + fileLength.length + " bytes.");
                 
                 // Store secret data into temp array so we can encrypt it
-                byte[] secretData = new byte[nSecretBytes];
+                byte[] secretData = new byte[nEncryptedBytes];
                 logger.fine("Secret metadata = " + secretData.length + " bytes.");
                 
                 System.arraycopy(passwordHash,  0, secretData, 0,                                passwordHash.length);
@@ -684,7 +754,7 @@ public class EFS extends Utility {
                 // Write all data to new array.
                 logger.fine("Writing metadata to physical file...");
                  
-                byte[] toWrite = new byte[header.length + encryptedMetadata.length + metadataDigest.length + fileDigest.length];
+                byte[] toWrite = new byte[metadataPlusDigestsLength];
                 System.arraycopy(header,            0, toWrite, 0,                                        header.length);
                 System.arraycopy(encryptedMetadata, 0, toWrite, header.length,                            encryptedMetadata.length);
                 System.arraycopy(metadataDigest,    0, toWrite, header.length + encryptedMetadata.length, metadataDigest.length);
@@ -754,7 +824,8 @@ public class EFS extends Utility {
             }
             logger.fine("Password correct.");
             
-            length = getLengthFromMetadata(plaintext);
+            byte[] lengthBytes = getMetadataField(plaintext, MetadataField.FILE_SIZE, false);
+            length = bytesToInteger(lengthBytes);
             
         } else {
             logger.severe("Failed to retrieve metadata for file " + file_name + ".");
@@ -771,7 +842,6 @@ public class EFS extends Utility {
     @Override
     public byte[] read(String file_name, int starting_position, int len, String password) throws Exception {
         throw new PasswordIncorrectException();
-    	//return null;
     }
 
     

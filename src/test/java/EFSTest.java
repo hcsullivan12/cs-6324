@@ -54,7 +54,7 @@ public class EFSTest extends TestCase {
     public void testGetNewPasswordSalt() {
         EFS efs = new EFS(null);
         
-        String salt = efs.getNewPasswordSalt();
+        String salt = efs.getNewPasswordSalt(16);
         assertEquals(salt.length(), 16);
         assertEquals(salt.getBytes(StandardCharsets.US_ASCII).length, 16);
     }
@@ -63,7 +63,7 @@ public class EFSTest extends TestCase {
         EFS efs = new EFS(null);
         
         String password = "MyP@$$w0rD!23";
-        String salt     = efs.getNewPasswordSalt();
+        String salt     = efs.getNewPasswordSalt(16);
         
         byte[] hash1 = efs.getPasswordHash(password, salt);
         byte[] hash2 = efs.getPasswordHash(password, salt);
