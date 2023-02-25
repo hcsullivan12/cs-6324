@@ -83,8 +83,7 @@ public class EFSTest extends TestCase {
         try {
             efs.create(filename, "hxs200010", "MyPassword");
         } catch (Exception e) {
-            System.out.println(e.getMessage());
-            fail();
+            fail(e.getMessage());
         } finally {
             deleteDirectory(filename);            
         }
@@ -112,7 +111,7 @@ public class EFSTest extends TestCase {
         }
     }
     
-    public void testLength() {
+    public void testLength() throws Exception {
         EFS efs = new EFS(null);
         String filename = "testSomething.txt";
         String username = "hxs200010";
@@ -124,7 +123,7 @@ public class EFSTest extends TestCase {
             length = efs.length(filename, password);
             
         } catch (Exception e) {
-            fail(e.getMessage());
+            throw e;
         }
         
         System.out.println(length);
@@ -158,7 +157,6 @@ public class EFSTest extends TestCase {
         int dkLen = 256;
         
         try {
-            System.out.println("HEY");
             EFS.HashAlg alg = EFS.HashAlg.SHA256;
             byte[] result = efs.compute_PBKDF2_SHA256(password, salt, iter, dkLen);
             

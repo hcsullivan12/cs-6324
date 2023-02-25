@@ -1,9 +1,11 @@
 import java.io.File;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Random;
+import java.util.logging.FileHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
@@ -14,24 +16,30 @@ import java.util.logging.StreamHandler;
  * @netid hxs200010
  * @email hunter.sullivan@utdallas.edu
  */
-public class EFS extends Utility{
-    
-    private int N_USERNAME_BYTES = 128;
-    private int N_SALT_BYTES = 16;
-    private int N_FEK_BYTES = 16;
-    private int N_PASSWORD_HASH_BYTES = 64;
-    private int N_LENGTH_BYTES = 4;
-    private int ENCRYPTION_ALG_BLOCK_SIZE = 128;
-    private int N_SECRETS_BYTES = 0;
-    private Charset CHARACTER_SET = StandardCharsets.US_ASCII;
-    private ByteBuffer intByteBuffer = ByteBuffer.allocate(Integer.BYTES);
-    private Logger logger = Logger.getLogger(EFS.class.getName()); 
+public class EFS extends Utility {
     
     public static enum HashAlg {
         SHA256,
         SHA384,
         SHA512
     }
+    
+    private HashAlg PASSWORD_HASH_ALG = HashAlg.SHA256;
+    private HashAlg METADATA_DIGEST_ALG = HashAlg.SHA256;
+    private HashAlg FILE_DIGEST_ALG = HashAlg.SHA256;
+    private HashAlg PBKDF2_HASH_ALG = HashAlg.SHA256;
+    
+    private int N_USERNAME_BYTES = 128;
+    private int N_SALT_BYTES = 16;
+    private int N_FEK_BYTES = 16;
+    private int N_LENGTH_BYTES = 4;
+    private int AES_BLOCK_SIZE = 128;
+    private int N_PBDFK2_ITERATIONS = 1000;
+    private int DERIVED_KEY_LENGTH = 256;    // setting to same output length of SHA
+    
+    private Charset CHARACTER_SET = StandardCharsets.US_ASCII;
+    private ByteBuffer intByteBuffer = ByteBuffer.allocate(Integer.BYTES);
+    private Logger logger = Logger.getLogger(EFS.class.getName()); 
     
     /**
      * Get the hash alg block size in bytes.
@@ -65,6 +73,31 @@ public class EFS extends Utility{
             return 64;
         }
         throw new Exception("Unsupported hash algorithm: " + h);
+    }
+    
+    /**
+     * Get the size of the secret metadata in bytes.
+     * @return number of bytes.
+     */
+    public int getNumSecretBytes() throws Exception {
+        // The encryption algorithm requires the message size to be multiple of the key.
+        int result = getHashOutputSize(PASSWORD_HASH_ALG) + N_FEK_BYTES + N_LENGTH_BYTES;
+
+        while (result % N_FEK_BYTES != 0)
+        {
+            result += 1;
+        }
+
+        return result;
+    }
+    
+    /**
+     * Computes the size of the entire metadata block in bytes.
+     * @return number of bytes
+     * @throws Exception
+     */
+    public int getMetadataSize() throws Exception {
+        return N_USERNAME_BYTES + N_SALT_BYTES + getHashOutputSize(PASSWORD_HASH_ALG) + N_FEK_BYTES + N_LENGTH_BYTES + getHashOutputSize(METADATA_DIGEST_ALG) + getHashOutputSize(FILE_DIGEST_ALG);
     }
     
     /**
@@ -153,12 +186,18 @@ public class EFS extends Utility{
      */
     public byte[] getPasswordHash(String password, String salt) throws Exception {
         String message = password + salt;
-        if (N_PASSWORD_HASH_BYTES == 32) {
-            return hash_SHA256((password + salt).getBytes(CHARACTER_SET));
-        } else if (N_PASSWORD_HASH_BYTES == 64) {
+        
+        if (PASSWORD_HASH_ALG == HashAlg.SHA256) {
+            return hash_SHA256(message.getBytes(CHARACTER_SET));
+            
+        } else if (PASSWORD_HASH_ALG == HashAlg.SHA384) {
+            return hash_SHA384(message.getBytes(CHARACTER_SET));
+            
+        } else if (PASSWORD_HASH_ALG == HashAlg.SHA512) {
             return hash_SHA512(message.getBytes(CHARACTER_SET));
+            
         } else {
-            throw new Exception("Password hash size " + N_PASSWORD_HASH_BYTES + " not implemented.");
+            throw new Exception("Unsupported hash algorithm: " + PASSWORD_HASH_ALG);
         }
     }
     
@@ -184,22 +223,11 @@ public class EFS extends Utility{
         File file = new File(dir, "0");
         
         if (file.exists()) {
-            return read_from_file(file);
+            byte[] contents = read_from_file(file);
+            return Arrays.copyOfRange(contents, 0, getMetadataSize());
         } else {
             return null;
         }
-    }
-    
-    /**
-     * Derive key from password. Note, the key must be a certain length.
-     * @param password
-     * @param passwordHash
-     * @return The key as a byte array.
-     */
-    public byte[] getKeyFromPassword(String password, byte[] passwordHash) {
-        byte[] key = new byte[N_FEK_BYTES];
-        System.arraycopy(passwordHash, 0, key, 0, N_FEK_BYTES);
-        return key;
     }
     
     /**
@@ -209,27 +237,30 @@ public class EFS extends Utility{
      * @return Ciphertext byte array.
      */
     public byte[] encryptByteArray(byte[] plaintext, byte[] key) throws Exception {
+        logger.fine("ENTRY encryptByteArray plaintext.length = " + plaintext.length + " bytes, key.length = " + key.length + " bytes.");
         
-        if (plaintext.length > ENCRYPTION_ALG_BLOCK_SIZE) {
+        if (plaintext.length > AES_BLOCK_SIZE) {
+            logger.fine("Encrypting via CTR mode...");
             
-            int nblocks = (int)Math.ceil((double)plaintext.length / ENCRYPTION_ALG_BLOCK_SIZE);
-            byte[] ciphertext = new byte[nblocks * ENCRYPTION_ALG_BLOCK_SIZE];
+            int nblocks = (int)Math.ceil((double)plaintext.length / AES_BLOCK_SIZE);
+            byte[] ciphertext = new byte[nblocks * AES_BLOCK_SIZE];
             int currentPosition = 0; 
-            int nextPosition = ENCRYPTION_ALG_BLOCK_SIZE;
+            int nextPosition = AES_BLOCK_SIZE;
             
             for (int i = 0; i < nblocks; i++) {
                 byte[] nextKey = integerToBytes(bytesToInteger(key) + (int)i);
                 byte[] ciphertextBlock = encript_AES(Arrays.copyOfRange(plaintext, currentPosition, nextPosition), nextKey);
                 
-                System.arraycopy(ciphertextBlock, 0, ciphertext, currentPosition, ENCRYPTION_ALG_BLOCK_SIZE);
+                System.arraycopy(ciphertextBlock, 0, ciphertext, currentPosition, AES_BLOCK_SIZE);
                 
                 currentPosition = nextPosition;
-                nextPosition += ENCRYPTION_ALG_BLOCK_SIZE;
+                nextPosition += AES_BLOCK_SIZE;
             }
             
             return ciphertext;
             
         } else {
+            logger.fine("Encrypting single block...");
             return encript_AES(plaintext, key);
         }
     }
@@ -241,27 +272,30 @@ public class EFS extends Utility{
      * @return
      */
     public byte[] decryptByteArray(byte[] ciphertext, byte[] key) throws Exception {
+        logger.fine("ENTRY decryptByteArray ciphertext.length = " + ciphertext.length + " bytes, key.length = " + key.length + " bytes.");
         
-        if (ciphertext.length > ENCRYPTION_ALG_BLOCK_SIZE) {
+        if (ciphertext.length > AES_BLOCK_SIZE) {
+            logger.fine("Decrypting via CTR mode...");
 
-            int nblocks = (int)Math.ceil((double)ciphertext.length / ENCRYPTION_ALG_BLOCK_SIZE);
-            byte[] plaintext = new byte[nblocks * ENCRYPTION_ALG_BLOCK_SIZE];
+            int nblocks = (int)Math.ceil((double)ciphertext.length / AES_BLOCK_SIZE);
+            byte[] plaintext = new byte[nblocks * AES_BLOCK_SIZE];
             int currentPosition = 0; 
-            int nextPosition = ENCRYPTION_ALG_BLOCK_SIZE;
+            int nextPosition = AES_BLOCK_SIZE;
             
             for (int i = 0; i < nblocks; i++) {
                 byte[] nextKey = integerToBytes(bytesToInteger(key) + (int)i);
                 byte[] plaintextBlock = decript_AES(Arrays.copyOfRange(ciphertext, currentPosition, nextPosition), nextKey);
                 
-                System.arraycopy(plaintextBlock, 0, plaintext, currentPosition, ENCRYPTION_ALG_BLOCK_SIZE);
+                System.arraycopy(plaintextBlock, 0, plaintext, currentPosition, AES_BLOCK_SIZE);
                 
                 currentPosition = nextPosition;
-                nextPosition += ENCRYPTION_ALG_BLOCK_SIZE;
+                nextPosition += AES_BLOCK_SIZE;
             }
             
             return plaintext;
             
         } else {
+            logger.fine("Decrypting single block...");
             return decript_AES(ciphertext, key);
         }
     }
@@ -294,13 +328,9 @@ public class EFS extends Utility{
      * @throws Exception
      */
     public byte[] compute_HMAC(byte[] key, byte[] message, HashAlg hashAlg) throws Exception {
-        logger.fine("ENTRY compute_HMAC " + key.length + " " + message.length + " " + hashAlg);
         int blockSize = getHashBlockSize(hashAlg);
         int outputSize = getHashOutputSize(hashAlg);
         byte[] blockSizedKey = computeBlockSizedKey(key, hashAlg, blockSize);
-        
-        logger.fine("HashAlg = " + hashAlg + " block size = " + blockSize + " outputSize = " + outputSize);
-        logger.fine("BlockSizedKey size = " + blockSizedKey.length);
         
         byte[] okeyPad = new byte[blockSizedKey.length];
         byte[] ikeyPad = new byte[blockSizedKey.length];
@@ -311,23 +341,19 @@ public class EFS extends Utility{
         }
         
         // Concat ikeyPad and message
-        logger.fine("Concatenating ikeyPad and message...");
         byte[] iConcat = new byte[ikeyPad.length + message.length];
         System.arraycopy(ikeyPad, 0, iConcat, 0,              ikeyPad.length);
         System.arraycopy(message, 0, iConcat, ikeyPad.length, message.length);
         
         // Hash it
-        logger.fine("Hashing it...");
         byte[] iHash = computeHash(iConcat, hashAlg);
         
         // Concat okeyPad and iHash
-        logger.fine("Concatenating ikeyPad and message...");
         byte[] oConcat = new byte[okeyPad.length + iHash.length];
         System.arraycopy(okeyPad, 0, oConcat, 0,              okeyPad.length);
         System.arraycopy(iHash,   0, oConcat, okeyPad.length, iHash.length);
         
         // Hash it
-        logger.fine("Hashing it...");
         return computeHash(oConcat, hashAlg);
     }
     
@@ -381,6 +407,7 @@ public class EFS extends Utility{
      */
     public byte[] compute_PBKDF2(byte[] password, byte[] salt, int niterations, int dkLen, HashAlg hashAlg) throws Exception {
         logger.fine("ENTRY compute_PBKDF2 " + niterations + " " + dkLen + " " + hashAlg);
+        
         if (niterations < 0) {
             throw new Exception("Number of iterations must be greater than zero");
         }
@@ -392,6 +419,8 @@ public class EFS extends Utility{
             throw new Exception("Derived key length is too long.");
         }
         
+        // Force the key length to be a multiple of the hash length. 
+        // This is not in the spec, but it simplifies the result.
         if (dkLen % hLen != 0) {
             throw new Exception("Derived key size must be a multiple of " + hLen + " bits.");
         }
@@ -405,16 +434,11 @@ public class EFS extends Utility{
         byte[] result = new byte[l * hLenBytes];
         
         // Compute T_i for blocks 1, 2, ..., l
-        System.out.println("Starting loop...");
         for (int i = 1; i <= l; i++) {
-            System.out.println("Computing " + i + "th XOR sum...");
             byte[] T_i = compute_PBKDF2_XORSUM(password, salt, niterations, i, hashAlg);
-            System.out.println("Finsihed...");
             
             // Concatenate this T_i with the others
-            System.out.println("T_i size = " + T_i.length + " result size = " + result.length);
             System.arraycopy(T_i, 0, result, (i - 1) * T_i.length, T_i.length);
-            System.out.println("Hey there");
         }
         
         return result;
@@ -463,21 +487,27 @@ public class EFS extends Utility{
     public EFS(Editor e)
     {
         super(e);
-        
-        // Set log level and log to console
-        logger.setLevel(Level.INFO);
-        logger.addHandler(new StreamHandler(System.out, new SimpleFormatter()));
-        logger.getHandlers()[0].setLevel(Level.INFO);
+                
+        try {
+            // Initialize logging
+            System.setProperty("java.util.logging.SimpleFormatter.format", 
+                    "%1$tF %1$tT %4$s %2$s %5$s%6$s%n");
+            FileHandler fh = new FileHandler("efs.log");
+            fh.setFormatter(new SimpleFormatter());
+            logger.addHandler(fh);
+            logger.setUseParentHandlers(false); // disable console logging
+            
+            logger.setLevel(Level.FINE);
+            logger.getHandlers()[0].setLevel(Level.FINE);
+            
+        } catch (SecurityException ex) {  
+            ex.printStackTrace();  
+        } catch (IOException ex) {  
+            ex.printStackTrace();
+        }
         
         // Set username and password
         //set_username_password();
-        
-        // Determine size of the secret data section and cache it, needs to be multiple of N_FEK_BYTES.
-        N_SECRETS_BYTES = N_PASSWORD_HASH_BYTES + N_FEK_BYTES + N_LENGTH_BYTES;
-        
-        while (N_SECRETS_BYTES % N_FEK_BYTES != 0) {
-            N_SECRETS_BYTES += 1;
-        }
     }
 
     /**
@@ -499,59 +529,90 @@ public class EFS extends Utility{
                 
                 //################
                 // Begin header section...
-                
+
                 byte[] header = new byte[ N_USERNAME_BYTES + N_SALT_BYTES ];
+                logger.fine("Username = " + N_USERNAME_BYTES + " bytes, salt = " + N_SALT_BYTES + " bytes, header size = " + header.length + " bytes.");
                 
                 // Add the username
                 if (user_name.length() > N_USERNAME_BYTES) {
-                    throw new Exception("Username longer than " + N_USERNAME_BYTES + " bytes.");
+                    String msg = "Username longer than " + N_USERNAME_BYTES + " bytes.";
+                    logger.severe(msg);
+                    throw new Exception(msg);
                 }
                 System.arraycopy(user_name.getBytes(CHARACTER_SET), 0, header, 0, user_name.length());
                 
                 // Add the salt
                 logger.fine("Generating new salt...");
                 String salt = getNewPasswordSalt();
+                logger.fine("Salt = " + salt.length() + " bytes.");
                 System.arraycopy(salt.getBytes(CHARACTER_SET), 0, header, N_USERNAME_BYTES, N_SALT_BYTES);
                 
                 //################
                 // Begin secret section...
-
+                
+                int nSecretBytes = getNumSecretBytes();
+                
                 logger.fine("Hashing password...");
                 byte[] passwordHash = getPasswordHash(password, salt);
+                logger.fine("Password hash = " + passwordHash.length + " bytes.");
+                
                 logger.fine("Generating FEK for this new file...");
                 byte[] fek = secureRandomNumber(N_FEK_BYTES);
+                logger.fine("FEK = " + fek.length + " bytes.");
+                
                 byte[] fileLength = integerToBytes(0);  // We are not storing anything yet
+                logger.fine("File length = " + fileLength.length + " bytes.");
                 
                 // Store secret data into temp array so we can encrypt it
-                byte[] secretData = new byte[N_SECRETS_BYTES];
+                byte[] secretData = new byte[nSecretBytes];
+                logger.fine("Secret metadata = " + secretData.length + " bytes.");
+                
                 System.arraycopy(passwordHash,  0, secretData, 0,                                passwordHash.length);
                 System.arraycopy(fek,           0, secretData, passwordHash.length,              fek.length);
                 System.arraycopy(fileLength,    0, secretData, passwordHash.length + fek.length, fileLength.length);
+
+                logger.fine("Deriving encryption key from password...");
+                byte[] derivedKey = compute_PBKDF2(password.getBytes(CHARACTER_SET), salt.getBytes(CHARACTER_SET), N_PBDFK2_ITERATIONS, DERIVED_KEY_LENGTH, PBKDF2_HASH_ALG);
+                logger.fine("Derived key = " + derivedKey.length + " bytes.");
                 
-                // Encrypted secret data
                 logger.fine("Encrypting secret metadata...");
-                byte[] derivedKey = getKeyFromPassword(password, passwordHash);
                 byte[] encryptedMetadata = encryptByteArray(secretData, derivedKey);
+                logger.fine("Secret metadata = " + encryptedMetadata.length + " bytes.");
                 
                 //################
                 // Begin digest section...
                 
-                // Tag
-                byte[] hmac = "FIXME".getBytes();
+                // Metadata digest. We will use the derived key.
+                logger.fine("Computing metadata digest...");
+                byte[] metadata = new byte[header.length + encryptedMetadata.length];
+                System.arraycopy(header, 0, metadata, 0, header.length);
+                System.arraycopy(encryptedMetadata, 0, metadata, header.length, encryptedMetadata.length);
                 
-                // Write all data to new array
+                byte[] metadataDigest = compute_HMAC(derivedKey, metadata, METADATA_DIGEST_ALG);
+                byte[] fileDigest = compute_HMAC(derivedKey, "".getBytes(), FILE_DIGEST_ALG); // digest of empty file
+                
+                int metadataPlusDigestsLength = header.length + encryptedMetadata.length + metadataDigest.length + fileDigest.length;
+                if (metadataPlusDigestsLength > Config.BLOCK_SIZE) {
+                    throw new Exception("Metadata section size (" + metadataPlusDigestsLength + ") exceeds physical file size limit (" + Config.BLOCK_SIZE +")");
+                }
+                
+                logger.fine("Metadata digest = " + metadataDigest.length + " bytes, file digest = " + fileDigest.length + " bytes, metadata size = " + metadataPlusDigestsLength + " bytes.");
+                
+                // Write all data to new array.
                 logger.fine("Writing metadata to physical file...");
-                byte[] toWrite = new byte[header.length + encryptedMetadata.length + hmac.length];
+                 
+                byte[] toWrite = new byte[header.length + encryptedMetadata.length + metadataDigest.length + fileDigest.length];
                 System.arraycopy(header,            0, toWrite, 0,                                        header.length);
                 System.arraycopy(encryptedMetadata, 0, toWrite, header.length,                            encryptedMetadata.length);
-                System.arraycopy(hmac,              0, toWrite, header.length + encryptedMetadata.length, hmac.length);
+                System.arraycopy(metadataDigest,    0, toWrite, header.length + encryptedMetadata.length, metadataDigest.length);
+                System.arraycopy(fileDigest,        0, toWrite, header.length + encryptedMetadata.length + metadataDigest.length, fileDigest.length);
     
                 save_to_file(toWrite, metadataFile);
                 
-                logger.fine("Finished creating new file " + file_name + " for user " + user_name + ".");
+                logger.info("Successfully created new file " + file_name + " for user " + user_name + ".");
                 
             } catch (Exception e) {
-                logger.warning("Failed to create new file " + file_name + " for user " + user_name);
+                logger.severe("Failed to create new file " + file_name + " for user " + user_name + ": " + e.getMessage());
                 
                 // Remove the directory
                 dir.delete();
@@ -593,29 +654,61 @@ public class EFS extends Utility{
     public int length(String file_name, String password) throws Exception {
         logger.fine("ENTRY length " + file_name + " " + password);
         
+        logger.fine("Fetching file metadata...");
         byte[] metadata = getFileMetadata(file_name);
         int length = 0;
         
         if (metadata != null) {
             
+            logger.info("Getting length of file " + file_name + "...");
+            
+            int nSecretBytes = getNumSecretBytes();
+            int hashLength = getHashOutputSize(PASSWORD_HASH_ALG);
+            
             // Fetch salt and derive the AES key from the given password.
+            logger.fine("Fetching salt and computing password hash...");
             byte[] salt = getSaltFromMetadata(metadata);
             byte[] passwordHash = getPasswordHash(password, new String(salt, CHARACTER_SET));
-            byte[] key = getKeyFromPassword(password, passwordHash);
+            logger.fine("Salt = " + salt.length + " bytes, hash = " + passwordHash.length + " bytes.");
+            
+            logger.info("Deriving key from password...");
+            byte[] derivedkey = compute_PBKDF2(password.getBytes(CHARACTER_SET), salt, N_PBDFK2_ITERATIONS, DERIVED_KEY_LENGTH, PBKDF2_HASH_ALG);
             
             // Attempt to decrypt the secret metadata...
-            byte[] plaintext = decryptByteArray(Arrays.copyOfRange(metadata, N_USERNAME_BYTES + N_SALT_BYTES, N_SECRETS_BYTES), key);
-            byte[] storedPasswordHash = Arrays.copyOfRange(plaintext, 0, N_PASSWORD_HASH_BYTES);
+            logger.fine("Decrypting metadata...");
+            int startIndex = N_USERNAME_BYTES + N_SALT_BYTES;
+            int endIndex = startIndex + nSecretBytes;
+            logger.fine(startIndex + " " + endIndex);
             
-            if (!Arrays.equals(passwordHash, passwordHash)) {
+            byte[] encryptedMetadata = Arrays.copyOfRange(metadata, startIndex, endIndex);
+            byte[] plaintext = decryptByteArray(encryptedMetadata, derivedkey);
+            logger.info(encryptedMetadata.length + " " + plaintext.length);
+            
+            logger.fine("Comparing computed password hash to stored password hash...");
+            byte[] storedPasswordHash = Arrays.copyOfRange(plaintext, 0, hashLength);
+            
+            logger.info(new String(passwordHash, StandardCharsets.US_ASCII));
+            logger.info(new String(storedPasswordHash, StandardCharsets.US_ASCII));
+            logger.info(new String(plaintext, StandardCharsets.US_ASCII));
+            
+            if (!Arrays.equals(passwordHash, storedPasswordHash)) {
+                logger.warning("Failed to retrieve file length, password incorrect.");
                 throw new PasswordIncorrectException();
             }
             
             // The password is correct...
-            length = bytesToInteger(Arrays.copyOfRange(plaintext, N_PASSWORD_HASH_BYTES + N_FEK_BYTES, plaintext.length));
+            logger.fine("Password hash matches");
+            startIndex = hashLength + N_FEK_BYTES;
+            endIndex = startIndex + N_LENGTH_BYTES;
+            logger.fine(plaintext.length + " " + startIndex + " " + endIndex);
+            byte[] res = Arrays.copyOfRange(plaintext, startIndex, endIndex);
+            logger.fine(res.length + " ");
+            ByteBuffer wrapped = ByteBuffer.wrap(res); // big-endian by default
+            length = wrapped.getInt();
+            logger.fine("HERE");
             
         } else {
-            logger.warning("Failed to retrieve metadata for file " + file_name);
+            logger.severe("Failed to retrieve metadata for file " + file_name + ".");
         }
         return length;
     }
