@@ -703,15 +703,12 @@ public class EFS extends Utility {
             }
 
             byte[] header = new byte[ N_USERNAME_BYTES + N_SALT_BYTES ];
-            logger.fine("Username = " + N_USERNAME_BYTES + " bytes, salt = " + N_SALT_BYTES + " bytes, header size = " + header.length + " bytes.");
             
             // Add the username
             System.arraycopy(user_name.getBytes(CHARACTER_SET), 0, header, 0, user_name.length());
             
             // Add the salt
-            logger.fine("Generating new salt...");
             String salt = getNewPasswordSalt(N_SALT_BYTES);
-            logger.fine("Salt = " + salt.length() + " bytes.");
             System.arraycopy(salt.getBytes(CHARACTER_SET), 0, header, N_USERNAME_BYTES, N_SALT_BYTES);
             
             //################
@@ -719,20 +716,12 @@ public class EFS extends Utility {
             
             int nEncryptedBytes = getSecretMetadataSize(true);
             
-            logger.fine("Hashing password...");
             byte[] passwordHash = getPasswordHash(password, salt);
-            logger.fine("Password hash = " + passwordHash.length + " bytes.");
-            
-            logger.fine("Generating FEK for this new file...");
             byte[] fek = secureRandomNumber(N_FEK_BYTES);
-            logger.fine("FEK = " + fek.length + " bytes.");
-            
             byte[] fileLength = integerToBytes(0);  // We are not storing anything yet
-            logger.fine("File length = " + fileLength.length + " bytes.");
             
             // Store secret data into temp array so we can encrypt it
             byte[] secretData = new byte[nEncryptedBytes];
-            logger.fine("Secret metadata = " + secretData.length + " bytes.");
             
             System.arraycopy(passwordHash,  0, secretData, 0,                                passwordHash.length);
             System.arraycopy(fek,           0, secretData, passwordHash.length,              fek.length);
@@ -740,40 +729,54 @@ public class EFS extends Utility {
 
             logger.fine("Deriving encryption key from password...");
             byte[] derivedKey = compute_PBKDF2(password.getBytes(CHARACTER_SET), salt.getBytes(CHARACTER_SET), N_PBDFK2_ITERATIONS, DERIVED_KEY_LENGTH, PBKDF2_HASH_ALG);
-            logger.fine("Derived key = " + derivedKey.length + " bytes.");
             
             logger.fine("Encrypting secret metadata...");
             byte[] encryptedMetadata = encryptByteArray(secretData, derivedKey);
-            logger.fine("Secret metadata = " + encryptedMetadata.length + " bytes.");
+            
+            byte[] metadata = new byte[header.length + encryptedMetadata.length];
+            System.arraycopy(header, 0, metadata, 0, header.length);
+            System.arraycopy(encryptedMetadata, 0, metadata, header.length, encryptedMetadata.length);
+            
+            //################
+            // Begin file contents section...
+            
+            // Sanity check...
+            int metadataDigestSize = getHashOutputSize(METADATA_DIGEST_ALG);
+            int fileDigestSize     = getHashOutputSize(FILE_DIGEST_ALG);
+            int metadataSize       =  metadata.length + metadataDigestSize + fileDigestSize;
+            
+            if (metadataSize > Config.BLOCK_SIZE) {
+                String msg = "Metadata section size (" + metadataSize + ") exceeds physical file size limit (" + Config.BLOCK_SIZE +")";
+                logger.severe(msg);
+                throw new Exception(msg);
+            }
+            
+            byte[] fileContents = new byte[Config.BLOCK_SIZE - ];
             
             //################
             // Begin digest section...
             
             // Metadata digest. We will use the derived key.
             logger.fine("Computing metadata digest...");
-            byte[] metadata = new byte[header.length + encryptedMetadata.length];
-            System.arraycopy(header, 0, metadata, 0, header.length);
-            System.arraycopy(encryptedMetadata, 0, metadata, header.length, encryptedMetadata.length);
-            
             byte[] metadataDigest = compute_HMAC(derivedKey, metadata, METADATA_DIGEST_ALG);
             
-            // Sanity check...
-            int metadataSize = metadata.length + getHashOutputSize(METADATA_DIGEST_ALG) + getHashOutputSize(FILE_DIGEST_ALG);
-            if (metadataSize > Config.BLOCK_SIZE) {
-                throw new Exception("Metadata section size (" + metadataSize + ") exceeds physical file size limit (" + Config.BLOCK_SIZE +")");
-            }
+
             
-            // We will write a full block, initialize it with data we know
+            // We will write a full block, initialize it with data we know.
             byte[] toWrite = new byte[Config.BLOCK_SIZE];
             System.arraycopy(header,            0, toWrite, 0,                                        header.length);
             System.arraycopy(encryptedMetadata, 0, toWrite, header.length,                            encryptedMetadata.length);
             System.arraycopy(metadataDigest,    0, toWrite, header.length + encryptedMetadata.length, metadataDigest.length);
             
-            // File digest. We will use the derived key.
-            logger.fine("Computing file digest...");
-            byte[] fileDigest = compute_HMAC(derivedKey, metadata, METADATA_DIGEST_ALG);
+            // We need to encrypt the empty file contents
             
-            System.arraycopy(fileDigest,        0, toWrite, header.length + encryptedMetadata.length + metadataDigest.length, fileDigest.length);
+            
+            // File digest. We will use the derived key.
+            // The file contents are just the remaining zeros in the toWrite array.
+            logger.fine("Computing file digest...");
+            byte[] fileDigest = compute_HMAC(derivedKey, Arrays.copyOfRange(toWrite, toWrite.length - fileDigestSize, toWrite.length), FILE_DIGEST_ALG);
+            
+            System.arraycopy(fileDigest, 0, toWrite, header.length + encryptedMetadata.length + metadataDigest.length, fileDigest.length);
             
             
             // Fill empty file up to Config.BLOCK_SIZE
