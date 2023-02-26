@@ -211,8 +211,8 @@ public class EFS extends Utility {
     }
     
     /**
-     * Computes the size of the entire plaintext metadata block in bytes.
-     * @param isEncrypted 
+     * Computes the size of the entire metadata block in bytes.
+     * @param isEncrypted Whether the metadata is encrypted or not
      * @return number of bytes
      * @throws Exception
      */
@@ -669,108 +669,126 @@ public class EFS extends Utility {
     public void create(String file_name, String user_name, String password) throws Exception {
         logger.fine("ENTRY create " + file_name + " " + user_name);
         
-        dir = new File(file_name);
+        File metadataFile = null;
         
-        if (dir.mkdir()) {
-            // This is a new file...
+        try {
             logger.info("Creating new file " + file_name + " for user " + user_name + ".");
             
-            try {
-                // Metadata will be stored in first physical file.
-                File metadataFile = new File(dir, "0");
-                
-                //################
-                // Begin header section...
-                
-                if (user_name.length() > N_USERNAME_BYTES) {
-                    String msg = "Username longer than " + N_USERNAME_BYTES + " bytes.";
-                    logger.severe(msg);
-                    throw new Exception(msg);
-                }
-
-                byte[] header = new byte[ N_USERNAME_BYTES + N_SALT_BYTES ];
-                logger.fine("Username = " + N_USERNAME_BYTES + " bytes, salt = " + N_SALT_BYTES + " bytes, header size = " + header.length + " bytes.");
-                
-                // Add the username
-                System.arraycopy(user_name.getBytes(CHARACTER_SET), 0, header, 0, user_name.length());
-                
-                // Add the salt
-                logger.fine("Generating new salt...");
-                String salt = getNewPasswordSalt(N_SALT_BYTES);
-                logger.fine("Salt = " + salt.length() + " bytes.");
-                System.arraycopy(salt.getBytes(CHARACTER_SET), 0, header, N_USERNAME_BYTES, N_SALT_BYTES);
-                
-                //################
-                // Begin secret section...
-                
-                int nEncryptedBytes = getSecretMetadataSize(true);
-                
-                logger.fine("Hashing password...");
-                byte[] passwordHash = getPasswordHash(password, salt);
-                logger.fine("Password hash = " + passwordHash.length + " bytes.");
-                
-                logger.fine("Generating FEK for this new file...");
-                byte[] fek = secureRandomNumber(N_FEK_BYTES);
-                logger.fine("FEK = " + fek.length + " bytes.");
-                
-                byte[] fileLength = integerToBytes(0);  // We are not storing anything yet
-                logger.fine("File length = " + fileLength.length + " bytes.");
-                
-                // Store secret data into temp array so we can encrypt it
-                byte[] secretData = new byte[nEncryptedBytes];
-                logger.fine("Secret metadata = " + secretData.length + " bytes.");
-                
-                System.arraycopy(passwordHash,  0, secretData, 0,                                passwordHash.length);
-                System.arraycopy(fek,           0, secretData, passwordHash.length,              fek.length);
-                System.arraycopy(fileLength,    0, secretData, passwordHash.length + fek.length, fileLength.length);
-
-                logger.fine("Deriving encryption key from password...");
-                byte[] derivedKey = compute_PBKDF2(password.getBytes(CHARACTER_SET), salt.getBytes(CHARACTER_SET), N_PBDFK2_ITERATIONS, DERIVED_KEY_LENGTH, PBKDF2_HASH_ALG);
-                logger.fine("Derived key = " + derivedKey.length + " bytes.");
-                
-                logger.fine("Encrypting secret metadata...");
-                byte[] encryptedMetadata = encryptByteArray(secretData, derivedKey);
-                logger.fine("Secret metadata = " + encryptedMetadata.length + " bytes.");
-                
-                //################
-                // Begin digest section...
-                
-                // Metadata digest. We will use the derived key.
-                logger.fine("Computing metadata digest...");
-                byte[] metadata = new byte[header.length + encryptedMetadata.length];
-                System.arraycopy(header, 0, metadata, 0, header.length);
-                System.arraycopy(encryptedMetadata, 0, metadata, header.length, encryptedMetadata.length);
-                
-                byte[] metadataDigest = compute_HMAC(derivedKey, metadata, METADATA_DIGEST_ALG);
-                byte[] fileDigest = compute_HMAC(derivedKey, "".getBytes(), FILE_DIGEST_ALG); // digest of empty file
-                
-                int metadataPlusDigestsLength = header.length + encryptedMetadata.length + metadataDigest.length + fileDigest.length;
-                if (metadataPlusDigestsLength > Config.BLOCK_SIZE) {
-                    throw new Exception("Metadata section size (" + metadataPlusDigestsLength + ") exceeds physical file size limit (" + Config.BLOCK_SIZE +")");
-                }
-                
-                logger.fine("Metadata digest = " + metadataDigest.length + " bytes, file digest = " + fileDigest.length + " bytes, metadata size = " + metadataPlusDigestsLength + " bytes.");
-                
-                // Write all data to new array.
-                logger.fine("Writing metadata to physical file...");
-                 
-                byte[] toWrite = new byte[metadataPlusDigestsLength];
-                System.arraycopy(header,            0, toWrite, 0,                                        header.length);
-                System.arraycopy(encryptedMetadata, 0, toWrite, header.length,                            encryptedMetadata.length);
-                System.arraycopy(metadataDigest,    0, toWrite, header.length + encryptedMetadata.length, metadataDigest.length);
-                System.arraycopy(fileDigest,        0, toWrite, header.length + encryptedMetadata.length + metadataDigest.length, fileDigest.length);
-    
-                save_to_file(toWrite, metadataFile);
-                
-                logger.info("Successfully created new file " + file_name + " for user " + user_name + ".");
-                
-            } catch (Exception e) {
-                logger.severe("Failed to create new file " + file_name + " for user " + user_name + ": " + e.getMessage());
-                
-                // Remove the directory
-                dir.delete();
-                throw e;
+            dir = new File(file_name);
+            if (dir.exists()) {
+                logger.info("The file " + file_name + " already exists.");
+                return;
             }
+            
+            // Create the directory for the file
+            boolean dirCreated = dir.mkdir();
+            if (!dirCreated) {
+                String msg = "Failed to create the directory for the file " + file_name + ".";
+                logger.severe(msg);
+                throw new Exception(msg);
+            }
+        
+            // This is a new file...
+            
+            // Metadata will be stored in first physical file.
+            metadataFile = new File(dir, "0");
+            
+            //################
+            // Begin header section...
+            
+            if (user_name.length() > N_USERNAME_BYTES) {
+                String msg = "Username longer than " + N_USERNAME_BYTES + " bytes.";
+                logger.severe(msg);
+                throw new Exception(msg);
+            }
+
+            byte[] header = new byte[ N_USERNAME_BYTES + N_SALT_BYTES ];
+            logger.fine("Username = " + N_USERNAME_BYTES + " bytes, salt = " + N_SALT_BYTES + " bytes, header size = " + header.length + " bytes.");
+            
+            // Add the username
+            System.arraycopy(user_name.getBytes(CHARACTER_SET), 0, header, 0, user_name.length());
+            
+            // Add the salt
+            logger.fine("Generating new salt...");
+            String salt = getNewPasswordSalt(N_SALT_BYTES);
+            logger.fine("Salt = " + salt.length() + " bytes.");
+            System.arraycopy(salt.getBytes(CHARACTER_SET), 0, header, N_USERNAME_BYTES, N_SALT_BYTES);
+            
+            //################
+            // Begin secret section...
+            
+            int nEncryptedBytes = getSecretMetadataSize(true);
+            
+            logger.fine("Hashing password...");
+            byte[] passwordHash = getPasswordHash(password, salt);
+            logger.fine("Password hash = " + passwordHash.length + " bytes.");
+            
+            logger.fine("Generating FEK for this new file...");
+            byte[] fek = secureRandomNumber(N_FEK_BYTES);
+            logger.fine("FEK = " + fek.length + " bytes.");
+            
+            byte[] fileLength = integerToBytes(0);  // We are not storing anything yet
+            logger.fine("File length = " + fileLength.length + " bytes.");
+            
+            // Store secret data into temp array so we can encrypt it
+            byte[] secretData = new byte[nEncryptedBytes];
+            logger.fine("Secret metadata = " + secretData.length + " bytes.");
+            
+            System.arraycopy(passwordHash,  0, secretData, 0,                                passwordHash.length);
+            System.arraycopy(fek,           0, secretData, passwordHash.length,              fek.length);
+            System.arraycopy(fileLength,    0, secretData, passwordHash.length + fek.length, fileLength.length);
+
+            logger.fine("Deriving encryption key from password...");
+            byte[] derivedKey = compute_PBKDF2(password.getBytes(CHARACTER_SET), salt.getBytes(CHARACTER_SET), N_PBDFK2_ITERATIONS, DERIVED_KEY_LENGTH, PBKDF2_HASH_ALG);
+            logger.fine("Derived key = " + derivedKey.length + " bytes.");
+            
+            logger.fine("Encrypting secret metadata...");
+            byte[] encryptedMetadata = encryptByteArray(secretData, derivedKey);
+            logger.fine("Secret metadata = " + encryptedMetadata.length + " bytes.");
+            
+            //################
+            // Begin digest section...
+            
+            // Metadata digest. We will use the derived key.
+            logger.fine("Computing metadata digest...");
+            byte[] metadata = new byte[header.length + encryptedMetadata.length];
+            System.arraycopy(header, 0, metadata, 0, header.length);
+            System.arraycopy(encryptedMetadata, 0, metadata, header.length, encryptedMetadata.length);
+            
+            byte[] metadataDigest = compute_HMAC(derivedKey, metadata, METADATA_DIGEST_ALG);
+            byte[] fileDigest = compute_HMAC(derivedKey, "".getBytes(), FILE_DIGEST_ALG); // digest of empty file
+            
+            int metadataPlusDigestsLength = header.length + encryptedMetadata.length + metadataDigest.length + fileDigest.length;
+            if (metadataPlusDigestsLength > Config.BLOCK_SIZE) {
+                throw new Exception("Metadata section size (" + metadataPlusDigestsLength + ") exceeds physical file size limit (" + Config.BLOCK_SIZE +")");
+            }
+            
+            logger.fine("Metadata digest = " + metadataDigest.length + " bytes, file digest = " + fileDigest.length + " bytes, metadata size = " + metadataPlusDigestsLength + " bytes.");
+            
+            // Write all data to new array.
+            logger.fine("Writing metadata to physical file...");
+             
+            byte[] toWrite = new byte[metadataPlusDigestsLength];
+            System.arraycopy(header,            0, toWrite, 0,                                        header.length);
+            System.arraycopy(encryptedMetadata, 0, toWrite, header.length,                            encryptedMetadata.length);
+            System.arraycopy(metadataDigest,    0, toWrite, header.length + encryptedMetadata.length, metadataDigest.length);
+            System.arraycopy(fileDigest,        0, toWrite, header.length + encryptedMetadata.length + metadataDigest.length, fileDigest.length);
+
+            save_to_file(toWrite, metadataFile);
+            
+            logger.info("Successfully created new file " + file_name + " for user " + user_name + ".");
+            
+        } catch (Exception e) {
+            String msg = "Failed to create new file " + file_name + " for user " + user_name + ": " + e.getMessage();
+            logger.severe(msg);
+            
+            // Remove the file and directory
+            if (metadataFile != null) {
+                metadataFile.delete();
+            }
+            dir.delete();
+            
+            throw e;
         }
     }
 
@@ -781,19 +799,28 @@ public class EFS extends Utility {
     public String findUser(String file_name) throws Exception {
         logger.fine("ENTRY findUser " + file_name);
         
-        byte[] metadata = getFileMetadata(file_name);
-        String username = null;
+        try {
         
-        if (metadata != null) {
+            logger.fine("Fetching file metadata...");
+            byte[] metadata = getFileMetadata(file_name);
+            if (metadata == null) {
+                String msg = "Failed to retrieve metadata for file " + file_name + ".";
+                logger.severe(msg);
+                throw new Exception(msg);
+            }
+        
+            byte[] usernameBytes = getMetadataField(metadata, MetadataField.USERNAME, true);
+            
             // Find the first zero byte
             int i;
             for (i = 0; i < metadata.length && metadata[i] != 0; i++) {}
-            username = new String(metadata, 0, i, CHARACTER_SET);
             
-        } else {
-            logger.warning("Failed to retrieve metadata for file " + file_name);
+            return new String(usernameBytes, 0, i, CHARACTER_SET);
+            
+        } catch (Exception e) {
+            logger.severe("Failed to find user for file " + file_name + ": " + e.getMessage());
+            throw e;
         }
-        return username;
     }
 
     /**
@@ -807,30 +834,39 @@ public class EFS extends Utility {
     public int length(String file_name, String password) throws Exception {
         logger.fine("ENTRY length " + file_name);
         
-        logger.fine("Fetching file metadata...");
-        byte[] metadata = getFileMetadata(file_name);
-        int length = 0;
-        
-        if (metadata != null) {
+        try {
+            logger.fine("Fetching file metadata...");
+            byte[] metadata = getFileMetadata(file_name);
             
-            logger.info("Getting length of file " + file_name + "...");
-            
+            if (metadata == null) {
+                String msg = "Failed to retrieve metadata for file " + file_name + ".";
+                logger.severe(msg);
+                throw new Exception(msg);
+            }
+                        
+            logger.fine("Decrypting metadata...");
             byte[] plaintext = decryptMetadata(metadata, password);
             
             logger.info("Checking password...");
             if (!isCorrectPassword(plaintext, password)) {
-                logger.info("Password incorrect.");
                 throw new PasswordIncorrectException();
             }
-            logger.fine("Password correct.");
+            logger.fine("Password is correct.");
             
+            logger.info("Getting length of file...");
             byte[] lengthBytes = getMetadataField(plaintext, MetadataField.FILE_SIZE, false);
-            length = bytesToInteger(lengthBytes);
+            int length = bytesToInteger(lengthBytes);
             
-        } else {
-            logger.severe("Failed to retrieve metadata for file " + file_name + ".");
+            logger.fine("Length of file = " + length + " bytes.");
+            return length;
+            
+        } catch (PasswordIncorrectException e) {
+            logger.severe("Password incorrect.");
+            throw e;
+        } catch (Exception e) {
+            logger.severe("Failed to find user for file " + file_name + ": " + e.getMessage());
+            throw e;
         }
-        return length;
     }
 
     /**
@@ -846,15 +882,145 @@ public class EFS extends Utility {
 
     
     /**
-     * Steps to consider...:<p>
-	 *	- verify password <p>
-     *  - check check if requested starting position and length are valid <p>
-     *  - ### main procedure for update the encrypted content ### <p>
-     *  - compute new HMAC and update metadata 
+     * Write new content to file. Note, this will overwrite data from the
+     * starting_position to the starting position + content.length.
+     * @param file_name
+     * @parma starting_position 
+     * @param content
+     * @param password
      */
     @Override
     public void write(String file_name, int starting_position, byte[] content, String password) throws Exception {
-        throw new PasswordIncorrectException();
+        logger.fine("ENTRY write " + file_name + " " + starting_position + " " + content.length);
+        
+        try {
+            logger.fine("Fetching file metadata...");
+            byte[] metadata = getFileMetadata(file_name);
+            if (metadata == null) {
+                String msg = "Failed to retrieve metadata for file " + file_name + ".";
+                logger.severe(msg);
+                throw new Exception(msg);
+            }
+
+            logger.fine("Decrypting metadata...");
+            byte[] plaintextMetadata = decryptMetadata(metadata, password);
+
+            logger.info("Checking password...");
+            if (!isCorrectPassword(plaintextMetadata, password)) {
+                throw new PasswordIncorrectException();
+            }
+            logger.fine("Password is correct.");
+
+            logger.fine("Getting file length of " + file_name + "...");
+            int fileLength = 0;
+            fileLength = bytesToInteger(getMetadataField(plaintextMetadata, MetadataField.FILE_SIZE, false));
+            logger.fine("File length = " + fileLength);
+
+            if (starting_position > fileLength) {
+                throw new Exception("Starting position for write (" + starting_position
+                        + ") is greater than the current file length (" + fileLength + ").");
+            }
+            
+            logger.fine("Getting FEK...");
+            byte[] fek = getMetadataField(plaintextMetadata, MetadataField.FEK, false);
+            
+            
+
+            logger.info("Writing " + content.length + " bytes to file " + file_name + "...");
+            
+            String strContent = byteArray2String(content);
+            File root = new File(file_name);
+
+            // We will need to grab the contents before and after this block of new content.
+            int contentLength = strContent.length();
+            
+            // The file contents start right after the metadata.
+            int startFileBlock = (metadata.length + starting_position) / Config.BLOCK_SIZE; 
+            int endFileBlock   = (metadata.length + starting_position + contentLength) / Config.BLOCK_SIZE;
+            
+            // We only want to decrypt the portions that we are overwriting
+            int startAesBlock = starting_position / AES_BLOCK_SIZE;
+            int endAesBlock   = (starting_position + contentLength) / AES_BLOCK_SIZE;
+            int nAesBlocksCurrently = fileLength / AES_BLOCK_SIZE;
+
+            byte[] toOverwritePlaintext = 
+
+            for (int i = startFileBlock; i <= endFileBlock; i++) {
+
+                // Determine the start and end points
+                int sp = i * Config.BLOCK_SIZE - starting_position;
+                int ep = (i + 1) * Config.BLOCK_SIZE - starting_position;
+                
+                String encryptedPrefix = "";  // the data before the starting point 
+                String encryptedPostfix = ""; // the data after the end point
+
+                // Get the prefix
+                // If we're on the first file block...
+                if (i == startFileBlock) {
+                    
+                    // We only need to grab a prefix if we are in the middle of some file block
+                    if (starting_position != startFileBlock * Config.BLOCK_SIZE) {
+
+                        // Get all of the file block contents
+                        encryptedPrefix = byteArray2String(read_from_file(new File(root, Integer.toString(i))));
+                        
+                        // Get the data before the starting point
+                        encryptedPrefix = encryptedPrefix.substring(0, starting_position - metadata.length - startFileBlock * Config.BLOCK_SIZE);
+                        
+                        // ?
+                        sp = Math.max(sp, 0);
+                    }
+                }
+
+                // If we're on the last block...
+                if (i == endFileBlock) {
+                    
+                    File end = new File(root, Integer.toString(i));
+                    if (end.exists()) {
+
+                        encryptedPostfix = byteArray2String(read_from_file(new File(root, Integer.toString(i))));
+
+                        if (encryptedPostfix.length() > starting_position + contentLength - endFileBlock * Config.BLOCK_SIZE) {
+                            encryptedPostfix = encryptedPostfix.substring(starting_position + contentLength - endFileBlock * Config.BLOCK_SIZE);
+                        }
+                        else {
+                            encryptedPostfix = "";
+                        }
+                    }
+                    ep = Math.min(ep, contentLength);
+                }
+
+                String toWrite = encryptedPrefix + strContent.substring(sp, ep) + encryptedPostfix;
+
+                while (toWrite.length() < Config.BLOCK_SIZE) {
+                    toWrite += '\0';
+                }
+
+                save_to_file(toWrite.getBytes(), new File(root, Integer.toString(i)));
+            }
+        }
+        catch (Exception e) {
+            logger.severe("Failed to write content to file " + file_name + ".");
+            throw e;
+        }
+
+        // update meta data
+
+        if (content.length + starting_position > length(file_name, password)) {
+            File root = new File("");
+            String s = byteArray2String(read_from_file(new File(root, "0")));
+            String[] strs = s.split("\n");
+            strs[0] = Integer.toString(content.length + starting_position);
+            String toWrite = "";
+            for (String t : strs) {
+                toWrite += t + "\n";
+            }
+            while (toWrite.length() < Config.BLOCK_SIZE) {
+                toWrite += '\0';
+            }
+            save_to_file(toWrite.getBytes(), new File(root, "0"));
+
+        }
     }
 
     /**

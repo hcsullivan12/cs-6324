@@ -1,5 +1,4 @@
 import java.io.File;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 
 import junit.framework.Test;
@@ -97,12 +96,14 @@ public class EFSTest extends TestCase {
         assertFalse(matches);
     }
     
-    public void testCreate() throws Exception {
+    public void testCreateFile() throws Exception {
         EFS efs = new EFS(null);
         String filename = "testFile.txt";
+        String username = "hxs200010";
+        String password = "MyPassword";
 
         try {
-            efs.create(filename, "hxs200010", "MyPassword");
+            efs.create(filename, username, password);
             
             // Check for the directory
             File file = new File(filename);
@@ -120,15 +121,102 @@ public class EFSTest extends TestCase {
         }
     }
     
-    public void testFindUser() throws Exception {
+    public void testCreateExistingFile() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testFile.txt";
+        String username = "hxs200010";
+        String password = "MyPassword";
+
+        try {
+            efs.create(filename, username, password);
+            
+            // Check for the directory
+            File file = new File(filename);
+            assertTrue(file.exists());
+            assertTrue(file.isDirectory());
+            
+            // Check for the physical file
+            File phyFile = new File(file, "0");
+            assertTrue(phyFile.exists());
+            
+            // Try to create the file again
+            efs.create(filename, username, password);
+            
+        } catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);            
+        }
+    }
+    
+    public void testCreateFailsOnBadPath() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testFile.txt";
+        String username = "hxs200010";
+        String password = "MyPassword";
+        
+        try {
+            // Try to create a file in /opt
+            efs.create("/opt/test", username, password);
+            fail();
+            
+        } catch(Exception e) {
+        }
+    }
+    
+    public void testCreateFailsOnTooLongUsername() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testFile.txt";
+        String username = "";
+        String password = "MyPassword";
+        
+        for (int i = 0; i < 128; i++) {
+            username += "A";
+        }
+
+        try {
+            efs.create(filename, username, password);
+            
+            // Check for the directory
+            File file = new File(filename);
+            assertTrue(file.exists());
+            assertTrue(file.isDirectory());
+            
+            // Check for the physical file
+            File phyFile = new File(file, "0");
+            assertTrue(phyFile.exists());
+        } catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);            
+        }
+        
+        // Add a letter over the maximum
+        username += "A";
+        try {
+            efs.create(filename, username, password);
+            fail();
+        } catch(Exception e) {
+        }
+    }
+    
+    public void testFindUserFailsOnMissingFile() throws Exception {
         EFS efs = new EFS(null);
         String filename = "testFindUser.txt";
         
         try {
             // Find user for non-existent file
             String result = efs.findUser("some-file-that-does-not-exist.txt");
-            assertEquals(result, null);
-            
+            fail();
+        } catch (Exception e) {
+        }
+    }
+    
+    public void testFindUserSucceeds() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testFindUser.txt";
+        
+        try {
             // Now try it on a real file
             String username = "hxs200010";
             String password = "MyP@$$W0Rd!23";
@@ -144,7 +232,7 @@ public class EFSTest extends TestCase {
         }
     }
     
-    public void testLength() throws Exception {
+    public void testLengthOnMissingFile() throws Exception {
         EFS efs = new EFS(null);
         String filename = "testLength.txt";
         String username = "hxs200010";
@@ -153,14 +241,50 @@ public class EFSTest extends TestCase {
         try {
             // Try on non-existent file
             int length = efs.length(filename, password);
-            assertEquals(length, 0);
+            fail();
             
-            // Now try real empty file
+        } catch (Exception e) {
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testLengthOnNewFile() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testLength.txt";
+        String username = "hxs200010";
+        String password = "MyP@$$W0Rd!23";
+        
+        try {
             efs.create(filename, username, password);
-            length = efs.length(filename, password);
+            int length = efs.length(filename, password);
             assertEquals(length, 0);
             
-            // Next up add some content
+        } catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testLengthThrowsPasswordIncorrectException() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testLength.txt";
+        String username = "hxs200010";
+        String password = "MyP@$$W0Rd!23";
+        
+        // First try with correct password
+        efs.create(filename, username, password);
+        int length = efs.length(filename, password);
+        assertEquals(length, 0);
+        
+        try {
+            // Now try with incorrect password
+            length = efs.length(filename, password+"1");
+            fail();
+            
+        } catch (PasswordIncorrectException e) {
+            // passed
         } catch (Exception e) {
             throw e;
         } finally {
@@ -203,5 +327,19 @@ public class EFSTest extends TestCase {
         } catch (Exception e) {
             throw e;
         }
+    }
+    
+    public void testSample() throws Exception {
+        Sample efs = new Sample(null);
+        String filename = "testSample.txt";
+        String username = "hunter";
+        String password = "password";
+        
+        efs.create(filename, username, password);
+        
+        byte[] content = efs.read_from_file(new File("/tmp/test.txt"));
+        efs.write(filename, 0, content, password);
+        
+        efs.write(filename, 0, "Here is my replacement".getBytes(), password);
     }
 }
