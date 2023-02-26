@@ -756,26 +756,31 @@ public class EFS extends Utility {
             System.arraycopy(encryptedMetadata, 0, metadata, header.length, encryptedMetadata.length);
             
             byte[] metadataDigest = compute_HMAC(derivedKey, metadata, METADATA_DIGEST_ALG);
-            byte[] fileDigest = compute_HMAC(derivedKey, "".getBytes(), FILE_DIGEST_ALG); // digest of empty file
             
-            int metadataPlusDigestsLength = header.length + encryptedMetadata.length + metadataDigest.length + fileDigest.length;
-            if (metadataPlusDigestsLength > Config.BLOCK_SIZE) {
-                throw new Exception("Metadata section size (" + metadataPlusDigestsLength + ") exceeds physical file size limit (" + Config.BLOCK_SIZE +")");
+            // Sanity check...
+            int metadataSize = metadata.length + getHashOutputSize(METADATA_DIGEST_ALG) + getHashOutputSize(FILE_DIGEST_ALG);
+            if (metadataSize > Config.BLOCK_SIZE) {
+                throw new Exception("Metadata section size (" + metadataSize + ") exceeds physical file size limit (" + Config.BLOCK_SIZE +")");
             }
             
-            logger.fine("Metadata digest = " + metadataDigest.length + " bytes, file digest = " + fileDigest.length + " bytes, metadata size = " + metadataPlusDigestsLength + " bytes.");
-            
-            // Write all data to new array.
-            logger.fine("Writing metadata to physical file...");
-             
-            byte[] toWrite = new byte[metadataPlusDigestsLength];
+            // We will write a full block, initialize it with data we know
+            byte[] toWrite = new byte[Config.BLOCK_SIZE];
             System.arraycopy(header,            0, toWrite, 0,                                        header.length);
             System.arraycopy(encryptedMetadata, 0, toWrite, header.length,                            encryptedMetadata.length);
             System.arraycopy(metadataDigest,    0, toWrite, header.length + encryptedMetadata.length, metadataDigest.length);
-            System.arraycopy(fileDigest,        0, toWrite, header.length + encryptedMetadata.length + metadataDigest.length, fileDigest.length);
-
-            save_to_file(toWrite, metadataFile);
             
+            // File digest. We will use the derived key.
+            logger.fine("Computing file digest...");
+            byte[] fileDigest = compute_HMAC(derivedKey, metadata, METADATA_DIGEST_ALG);
+            
+            System.arraycopy(fileDigest,        0, toWrite, header.length + encryptedMetadata.length + metadataDigest.length, fileDigest.length);
+            
+            
+            // Fill empty file up to Config.BLOCK_SIZE
+            logger.fine("Metadata digest = " + metadataDigest.length + " bytes, file digest = " + fileDigest.length + " bytes, metadata size = " + metadataSize + " bytes.");
+            
+            logger.fine("Writing metadata to physical file...");
+            save_to_file(toWrite, metadataFile);
             logger.info("Successfully created new file " + file_name + " for user " + user_name + ".");
             
         } catch (Exception e) {
