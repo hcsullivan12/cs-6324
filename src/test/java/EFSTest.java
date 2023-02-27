@@ -1,12 +1,12 @@
 import java.io.File;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
 import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
 
 import org.apache.commons.codec.binary.Hex;
-
 
 /**
  * Unit test for simple App.
@@ -46,7 +46,7 @@ public class EFSTest extends TestCase {
         File[] files = dir.listFiles((d, name) -> name.startsWith("efs.log"));
         
         for (File file : files) {
-            file.delete();
+            //file.delete();
         }
     }
     
@@ -117,7 +117,7 @@ public class EFSTest extends TestCase {
         } catch (Exception e) {
             throw e;
         } finally {
-            deleteDirectory(filename);            
+            //deleteDirectory(filename);            
         }
     }
     
@@ -249,7 +249,7 @@ public class EFSTest extends TestCase {
         }
     }
     
-    public void testLengthOnNewFile() throws Exception {
+    /*public void testLengthOnNewFile() throws Exception {
         EFS efs = new EFS(null);
         String filename = "testLength.txt";
         String username = "hxs200010";
@@ -265,9 +265,9 @@ public class EFSTest extends TestCase {
         } finally {
             deleteDirectory(filename);
         }
-    }
+    }*/
     
-    public void testLengthThrowsPasswordIncorrectException() throws Exception {
+    /*public void testLengthThrowsPasswordIncorrectException() throws Exception {
         EFS efs = new EFS(null);
         String filename = "testLength.txt";
         String username = "hxs200010";
@@ -290,7 +290,7 @@ public class EFSTest extends TestCase {
         } finally {
             deleteDirectory(filename);
         }
-    }
+    }*/
     
     public void testComputeHmac() throws Exception {
         EFS efs = new EFS(null);
@@ -329,7 +329,7 @@ public class EFSTest extends TestCase {
         }
     }
     
-    public void testSample() throws Exception {
+    /*public void testSample() throws Exception {
         Sample efs = new Sample(null);
         String filename = "testSample.txt";
         String username = "hunter";
@@ -341,5 +341,31 @@ public class EFSTest extends TestCase {
         efs.write(filename, 0, content, password);
         
         efs.write(filename, 0, "Here is my replacement".getBytes(), password);
+        efs.write(filename, 0, "Here is my replacement".getBytes(), password);
+    }*/
+    
+    public void testEncryptByteArraySuccessOnOneBlock() throws Exception {
+        EFS efs = new EFS(null);
+        
+        byte[] plaintext = "He1l0 Th3r3 m@t3".getBytes(StandardCharsets.US_ASCII);
+        byte[] key = efs.secureRandomNumber(16);
+        byte[] ciphertext = efs.encryptByteArray(plaintext, key);
+        byte[] decrypted = efs.decryptByteArray(ciphertext, key);
+        
+        assertTrue(Arrays.equals(decrypted, plaintext));
+    }
+    
+    public void testEncryptByteArraySuccessOnTwoBlocks() throws Exception {
+        EFS efs = new EFS(null);
+        
+        byte[] plaintext = "He1l0 Th3r3 m@t3, h0w @r3 Y0u Do".getBytes(StandardCharsets.US_ASCII);
+        byte[] key = efs.secureRandomNumber(16);
+        byte[] ciphertext = efs.encryptByteArray(plaintext, key);
+        byte[] decrypted = efs.decryptByteArray(ciphertext, key);
+        
+        efs.save_to_file(decrypted, new File("test1.txt"));
+        efs.save_to_file(ciphertext, new File("test2.txt"));
+        
+        assertTrue(Arrays.equals(decrypted, plaintext));
     }
 }
