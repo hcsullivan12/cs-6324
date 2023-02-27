@@ -24,19 +24,10 @@ public class EFSTest extends TestCase {
         }
     }
     
-    
-    /**
-     * Create the test case
-     *
-     * @param testName name of the test case
-     */
     public EFSTest( String testName ) {
         super( testName );
     }
 
-    /**
-     * @return the suite of tests being tested
-     */
     public static Test suite() {
         return new TestSuite( EFSTest.class );
     }
@@ -46,7 +37,7 @@ public class EFSTest extends TestCase {
         File[] files = dir.listFiles((d, name) -> name.startsWith("efs.log"));
         
         for (File file : files) {
-            //file.delete();
+            file.delete();
         }
     }
     
@@ -117,7 +108,7 @@ public class EFSTest extends TestCase {
         } catch (Exception e) {
             throw e;
         } finally {
-            //deleteDirectory(filename);            
+            deleteDirectory(filename);            
         }
     }
     
@@ -249,7 +240,7 @@ public class EFSTest extends TestCase {
         }
     }
     
-    /*public void testLengthOnNewFile() throws Exception {
+    public void testLengthOnNewFile() throws Exception {
         EFS efs = new EFS(null);
         String filename = "testLength.txt";
         String username = "hxs200010";
@@ -265,9 +256,9 @@ public class EFSTest extends TestCase {
         } finally {
             deleteDirectory(filename);
         }
-    }*/
+    }
     
-    /*public void testLengthThrowsPasswordIncorrectException() throws Exception {
+    public void testLengthThrowsPasswordIncorrectException() throws Exception {
         EFS efs = new EFS(null);
         String filename = "testLength.txt";
         String username = "hxs200010";
@@ -290,7 +281,7 @@ public class EFSTest extends TestCase {
         } finally {
             deleteDirectory(filename);
         }
-    }*/
+    }
     
     public void testComputeHmac() throws Exception {
         EFS efs = new EFS(null);
@@ -363,8 +354,19 @@ public class EFSTest extends TestCase {
         byte[] ciphertext = efs.encryptByteArray(plaintext, key);
         byte[] decrypted = efs.decryptByteArray(ciphertext, key);
         
-        efs.save_to_file(decrypted, new File("test1.txt"));
-        efs.save_to_file(ciphertext, new File("test2.txt"));
+        assertTrue(Arrays.equals(decrypted, plaintext));
+    }
+    
+    public void testEncryptByteArraySuccessOnInBetweenBlocks() throws Exception {
+        EFS efs = new EFS(null);
+        
+        byte[] plaintext = "He1l0 Th3r3 m@t3, h0w @r3 Y0u Do. By3!".getBytes(StandardCharsets.US_ASCII);
+        byte[] key = efs.secureRandomNumber(16);
+        byte[] ciphertext = efs.encryptByteArray(plaintext, key);
+        byte[] decryptedPadded = efs.decryptByteArray(ciphertext, key);
+        
+        // Decrypted is padded up to some multiple of AES block size
+        byte[] decrypted = Arrays.copyOfRange(decryptedPadded, 0, plaintext.length);
         
         assertTrue(Arrays.equals(decrypted, plaintext));
     }

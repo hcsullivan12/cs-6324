@@ -458,9 +458,18 @@ public class EFS extends Utility {
             // Encrypt IV||CTR_i
             byte[] returntextBlock = encript_AES(concat, key);
             
-            // XOR the result with the current block of sometext
-            for (int j = 0; j < returntextBlock.length; j++) {
+            // This is always true:
+            //     returntextBlock.length >= sometext.length
+            // 
+            // First XOR the result with the current block of sometext up to the sometext.length
+            int j = 0;
+            for (; j < returntextBlock.length && currentIndex + j < sometext.length; j++) {
                 returntext[currentIndex + j] = (byte) (returntextBlock[j] ^ sometext[currentIndex + j]);
+            }
+            
+            // Now, finish the XOR when returntextBlock.length > sometext.length
+            for (; j < returntextBlock.length; j++) {
+                returntext[currentIndex + j] = (byte) (returntextBlock[j] ^ 0x00);
             }
             
             currentIndex += AES_BLOCK_SIZE_BYTES;
