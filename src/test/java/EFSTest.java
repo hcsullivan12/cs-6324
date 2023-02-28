@@ -37,7 +37,7 @@ public class EFSTest extends TestCase {
         File[] files = dir.listFiles((d, name) -> name.startsWith("efs.log"));
         
         for (File file : files) {
-            file.delete();
+            //file.delete();
         }
     }
     
@@ -424,5 +424,52 @@ public class EFSTest extends TestCase {
         assertEquals(3, efs.getNumPhysicalFiles(2736));
         assertEquals(4, efs.getNumPhysicalFiles(2737));
         assertEquals(4, efs.getNumPhysicalFiles(2738));
+    }
+    
+    public void testCheckIntegrityThrowsOnMissingFile() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testCheckIntegrity.txt";
+        String username = "hxs200010";
+        String password = "MyPassword";
+
+        try {
+            efs.check_integrity(filename, password);
+            fail();
+        } catch (Exception e) {
+        }
+    }
+    
+    public void testCheckIntegrityThrowsOnIncorrectPassword() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testCheckIntegrity.txt";
+        String username = "hxs200010";
+        String password = "MyPassword";
+        
+        efs.create(filename, username, password);
+        
+        try {
+            efs.check_integrity(filename, password+"1");
+            fail();
+        } catch (PasswordIncorrectException e) {
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testCheckIntegrityPassesOnNewFile() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testCheckIntegrity.txt";
+        String username = "hxs200010";
+        String password = "MyPassword";
+        
+        efs.create(filename, username, password);
+        
+        try {
+            assertEquals(true, efs.check_integrity(filename, password));
+        } catch(Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);
+        }
     }
 }
