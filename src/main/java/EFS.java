@@ -147,6 +147,7 @@ public class EFS extends Utility {
      * @return The field as byte array
      */
     public byte[] getMetadataField(byte[] metadata, MetadataField field, boolean isEncrypted) throws Exception {
+        logger.fine("Retrieving " + field + " from metadata.");
         
         Map<MetadataFieldInfo, Integer> fieldInfoMap = metadataFieldInfoMap.get(field);
         int startIndex = fieldInfoMap.get(MetadataFieldInfo.START_POSITION);
@@ -209,6 +210,7 @@ public class EFS extends Utility {
      * @throws Exception
      */
     public byte[] getFileMetadata(String filename) throws Exception {
+        logger.fine("ENTRY " + filename + ".");
         dir = new File(filename);
         File file = new File(dir, "0");
         
@@ -223,29 +225,22 @@ public class EFS extends Utility {
     /**
      * Decrypt the file metadata.
      * @param metadata The file's metadata
-     * @param password The password
+     * @param key
      * @return Full, plaintext metadata, including header, secrets, and digests.
      */
-    public byte[] decryptMetadata(byte[] metadata, String password) throws Exception {
+    public byte[] decryptMetadata(byte[] metadata, byte[] key) throws Exception {
         logger.info("ENTRY");
 
-        int nCiphertextSecretBytes = getSecretMetadataSize(true);
         int nPlaintextSecretBytes  = getSecretMetadataSize(false);
         int nTotalPlaintextBytes   = getMetadataSize(false);
-        
-        logger.fine("Fetching salt...");
-        byte[] salt = getMetadataField(metadata, MetadataField.SALT, true);
-        
-        logger.info("Deriving key from password...");
-        byte[] derivedkey = compute_PBKDF2(password.getBytes(CHARACTER_SET), salt, N_PBDFK2_ITERATIONS, DERIVED_KEY_LENGTH, PBKDF2_HASH_ALG);
         
         // Only a portion of the metadata is encrypted...
         logger.fine("Decrypting secret metadata section...");
         int startIndex = metadataFieldInfoMap.get(MetadataField.PASSWORD_HASH).get(MetadataFieldInfo.START_POSITION);
-        int endIndex = startIndex + nCiphertextSecretBytes;
+        int endIndex   = metadataFieldInfoMap.get(MetadataField.METADATA_DIGEST).get(MetadataFieldInfo.START_POSITION);
         
         byte[] encryptedMetadata = Arrays.copyOfRange(metadata, startIndex, endIndex);
-        byte[] secrets = decryptByteArray(encryptedMetadata, derivedkey);
+        byte[] secrets = decryptByteArray(encryptedMetadata, key);
         
         // Copy to new array.
         byte[] result = new byte[nTotalPlaintextBytes];
@@ -270,10 +265,36 @@ public class EFS extends Utility {
         byte[] passwordHash = getPasswordHash(password, new String(salt, CHARACTER_SET));
         byte[] storedPasswordHash = getMetadataField(metadata, MetadataField.PASSWORD_HASH, isEncrypted);
         
+        logger.info("Checking password...");
         if (Arrays.equals(passwordHash, storedPasswordHash)) {
+            logger.info("Password is correct.");
             return true; 
         } else {
+            logger.warning("Password is incorrect.");
             return false;
+        }
+    }
+    
+    /**
+     * Returns the number of physical files for a given file length.
+     * @param fileLength
+     * @return Number of physical files
+     */
+    public int getNumPhysicalFiles(int fileLength) throws Exception {
+        if (fileLength < 0) {
+            return 1;
+        }
+        
+        int firstFileMax = Config.BLOCK_SIZE - getMetadataSize(true) - getHashOutputSize(FILE_DIGEST_ALG);
+        int extraFileMax = Config.BLOCK_SIZE - getHashOutputSize(FILE_DIGEST_ALG);
+        int leftOver = fileLength - firstFileMax;
+        
+        if (leftOver <= 0) {
+            // Can fit in the metadata physical file
+            return 1;
+        } else {
+            // Otherwise, we need one more for every extraFileMax bytes
+            return 2 + (leftOver - 1) / extraFileMax; 
         }
     }
     
@@ -903,8 +924,6 @@ public class EFS extends Utility {
         logger.fine("ENTRY " + file_name);
         
         try {
-        
-            logger.fine("Fetching file metadata...");
             byte[] metadata = getFileMetadata(file_name);
             if (metadata == null) {
                 String msg = "Failed to retrieve metadata for file " + file_name + ".";
@@ -938,29 +957,25 @@ public class EFS extends Utility {
         logger.fine("ENTRY " + file_name);
         
         try {
-            logger.fine("Fetching file metadata...");
             byte[] metadata = getFileMetadata(file_name);
-            
             if (metadata == null) {
                 String msg = "Failed to retrieve metadata for file " + file_name + ".";
                 logger.severe(msg);
                 throw new Exception(msg);
             }
-                        
-            logger.fine("Decrypting metadata...");
-            byte[] plaintext = decryptMetadata(metadata, password);
             
-            logger.info("Checking password...");
+            // We need to decrypt the metadata so we need to authenticate the user
+            byte[] salt = getMetadataField(metadata, MetadataField.SALT, true);
+            byte[] derivedkey = compute_PBKDF2(password.getBytes(CHARACTER_SET), salt, N_PBDFK2_ITERATIONS, DERIVED_KEY_LENGTH, PBKDF2_HASH_ALG);
+            byte[] plaintext = decryptMetadata(metadata, derivedkey);
+            
             if (!isCorrectPassword(plaintext, password)) {
                 throw new PasswordIncorrectException();
             }
-            logger.fine("Password is correct.");
             
-            logger.info("Getting length of file...");
             byte[] lengthBytes = getMetadataField(plaintext, MetadataField.FILE_SIZE, false);
             int length = bytesToInteger(lengthBytes);
             
-            logger.fine("Length of file = " + length + " bytes.");
             return length;
             
         } catch (PasswordIncorrectException e) {
@@ -997,16 +1012,21 @@ public class EFS extends Utility {
         logger.fine("ENTRY " + file_name + " " + starting_position + " " + content.length);
         
         try {
-            logger.fine("Fetching file metadata...");
             byte[] metadata = getFileMetadata(file_name);
             if (metadata == null) {
                 String msg = "Failed to retrieve metadata for file " + file_name + ".";
                 logger.severe(msg);
                 throw new Exception(msg);
             }
+            
+            logger.fine("Fetching salt...");
+            byte[] salt = getMetadataField(metadata, MetadataField.SALT, true);
+            
+            logger.info("Deriving key from password...");
+            byte[] derivedkey = compute_PBKDF2(password.getBytes(CHARACTER_SET), salt, N_PBDFK2_ITERATIONS, DERIVED_KEY_LENGTH, PBKDF2_HASH_ALG);
 
             logger.fine("Decrypting metadata...");
-            byte[] plaintextMetadata = decryptMetadata(metadata, password);
+            byte[] plaintextMetadata = decryptMetadata(metadata, derivedkey);
 
             logger.info("Checking password...");
             if (!isCorrectPassword(plaintextMetadata, password)) {
@@ -1133,7 +1153,54 @@ public class EFS extends Utility {
      */
     @Override
     public boolean check_integrity(String file_name, String password) throws Exception {
-        throw new Exception();
+        logger.fine("ENTRY " + file_name);
+        
+        try {
+            byte[] metadata = getFileMetadata(file_name);
+            if (metadata == null) {
+                String msg = "Failed to retrieve metadata for file " + file_name + ".";
+                logger.severe(msg);
+                throw new Exception(msg);
+            }
+            
+            // We need to decrypt the metadata so we can authenticate the user
+            byte[] salt = getMetadataField(metadata, MetadataField.SALT, true);
+            byte[] derivedkey = compute_PBKDF2(password.getBytes(CHARACTER_SET), salt, N_PBDFK2_ITERATIONS, DERIVED_KEY_LENGTH, PBKDF2_HASH_ALG);
+            byte[] plaintext = decryptMetadata(metadata, derivedkey);
+            
+            // Authenticate the user
+            if (!isCorrectPassword(plaintext, password)) {
+                throw new PasswordIncorrectException();
+            }
+            
+            // Compute the metadata digest and a compare to what is stored in metadata
+            logger.fine("Computing metadata digest using derived key...");
+            int startIndex = metadataFieldInfoMap.get(MetadataField.USERNAME).get(MetadataFieldInfo.START_POSITION);
+            int endIndex   = metadataFieldInfoMap.get(MetadataField.METADATA_DIGEST).get(MetadataFieldInfo.START_POSITION);
+            byte[] computedMetadataDigest = compute_HMAC(
+                    derivedkey, 
+                    Arrays.copyOfRange(metadata, startIndex, endIndex), 
+                    METADATA_DIGEST_ALG);
+            
+            byte[] metadataDigest = getMetadataField(metadata, MetadataField.METADATA_DIGEST, false);
+            
+            if (!Arrays.equals(metadataDigest, computedMetadataDigest)) {
+                logger.warning("Metadata digest verification has failed.");
+                return false;
+            }
+            
+            // Do the same thing for the file digest(s)
+            byte[] length = getMetadataField(plaintext, MetadataField.FILE_SIZE, false);
+            int nPhysicalFiles = getNumPhysicalFiles(bytesToInteger(length));
+            return false;
+            
+        } catch (PasswordIncorrectException e) {
+            logger.severe("Password incorrect.");
+            throw e;
+        } catch (Exception e) {
+            logger.severe("Failed to find user for file " + file_name + ": " + e.getMessage());
+            throw e;
+        }
     }
 
     /**

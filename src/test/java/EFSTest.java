@@ -191,6 +191,42 @@ public class EFSTest extends TestCase {
         }
     }
     
+    public void testCreateFailsOnTooLongPassword() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testFile.txt";
+        String username = "hunter";
+        String password = "";
+        
+        for (int i = 0; i < 128; i++) {
+            password += "A";
+        }
+
+        try {
+            efs.create(filename, username, password);
+            
+            // Check for the directory
+            File file = new File(filename);
+            assertTrue(file.exists());
+            assertTrue(file.isDirectory());
+            
+            // Check for the physical file
+            File phyFile = new File(file, "0");
+            assertTrue(phyFile.exists());
+        } catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);            
+        }
+        
+        // Add a letter over the maximum
+        password += "A";
+        try {
+            efs.create(filename, username, password);
+            fail();
+        } catch(Exception e) {
+        }
+    }
+    
     public void testFindUserFailsOnMissingFile() throws Exception {
         EFS efs = new EFS(null);
         String filename = "testFindUser.txt";
@@ -369,5 +405,24 @@ public class EFSTest extends TestCase {
         byte[] decrypted = Arrays.copyOfRange(decryptedPadded, 0, plaintext.length);
         
         assertTrue(Arrays.equals(decrypted, plaintext));
+    }
+    
+    public void testGetNumPhysicalFiles() throws Exception {
+        EFS efs = new EFS(null);
+        
+        assertEquals(1, efs.getNumPhysicalFiles(-1));
+        assertEquals(1, efs.getNumPhysicalFiles(0));
+        assertEquals(1, efs.getNumPhysicalFiles(751));
+        assertEquals(1, efs.getNumPhysicalFiles(752)); // boundary of first file
+        assertEquals(2, efs.getNumPhysicalFiles(753));
+        assertEquals(2, efs.getNumPhysicalFiles(754));
+        assertEquals(2, efs.getNumPhysicalFiles(1743));
+        assertEquals(2, efs.getNumPhysicalFiles(1744)); // boundary of second file
+        assertEquals(3, efs.getNumPhysicalFiles(1745));
+        assertEquals(3, efs.getNumPhysicalFiles(1746));
+        assertEquals(3, efs.getNumPhysicalFiles(2735));
+        assertEquals(3, efs.getNumPhysicalFiles(2736));
+        assertEquals(4, efs.getNumPhysicalFiles(2737));
+        assertEquals(4, efs.getNumPhysicalFiles(2738));
     }
 }
