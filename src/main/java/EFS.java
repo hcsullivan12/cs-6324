@@ -153,7 +153,6 @@ public class EFS extends Utility {
         int startIndex = fieldInfoMap.get(MetadataFieldInfo.START_POSITION);
         int endIndex = startIndex + fieldInfoMap.get(MetadataFieldInfo.SIZE);
         
-        System.out.println(startIndex + " " + endIndex);
         return Arrays.copyOfRange(metadata, startIndex, endIndex);
     }
     
@@ -410,8 +409,6 @@ public class EFS extends Utility {
         metadataFieldInfoMap.put(MetadataField.SECRETS, new HashMap<MetadataFieldInfo, Integer>());
         metadataFieldInfoMap.get(MetadataField.SECRETS).put(MetadataFieldInfo.START_POSITION, metadataFieldInfoMap.get(MetadataField.PASSWORD_HASH).get(MetadataFieldInfo.START_POSITION));
         metadataFieldInfoMap.get(MetadataField.SECRETS).put(MetadataFieldInfo.SIZE, getSecretMetadataSize(true));
-        
-        System.out.println(metadataFieldInfoMap);
     }
     
     // END Utility functions
@@ -1189,6 +1186,8 @@ public class EFS extends Utility {
     public boolean check_integrity(String file_name, String password) throws Exception {
         logger.fine("ENTRY " + file_name);
         
+        boolean result = true;
+        
         try {
             byte[] metadata = getFileMetadata(file_name);
             if (metadata == null) {
@@ -1197,15 +1196,13 @@ public class EFS extends Utility {
                 throw new Exception(msg);
             }
             
-            // We need to decrypt the metadata so we can authenticate the user
+            // It is worthwhile to authenticate the data before the user.
+            // Otherwise, an attacker could modify the encrypted metadata 
+            // and then the true user would not be able to access the file,
+            // without knowing whether the file has been modified.
+            
             byte[] salt = getMetadataField(metadata, MetadataField.SALT, true);
             byte[] derivedKey = computeDerivedKey(password.getBytes(CHARACTER_SET), salt);
-            byte[] plaintext = decryptMetadata(metadata, derivedKey);
-            
-            // Authenticate the user
-            if (!isCorrectPassword(plaintext, password)) {
-                throw new PasswordIncorrectException();
-            }
             
             // Compute the metadata digest and a compare to what is stored in metadata
             logger.fine("Computing metadata digest using derived key...");
@@ -1214,9 +1211,14 @@ public class EFS extends Utility {
             
             if (!Arrays.equals(metadataDigest, computedMetadataDigest)) {
                 logger.warning("Metadata digest verification has failed.");
-                return false;
+                result = false;
+            } else {
+                logger.fine("Metadata digest verification passed.");
             }
-            logger.fine("Metadata digest verification passed.");
+            
+            // We need to decrypt the metadata so we can determine
+            // how many file blocks we're dealing with. 
+            byte[] plaintext = decryptMetadata(metadata, derivedKey);
             
             // Do the same thing for the file digest(s)
             byte[] length = getMetadataField(plaintext, MetadataField.FILE_SIZE, false);
@@ -1232,12 +1234,19 @@ public class EFS extends Utility {
                 
                 if (!Arrays.equals(fileDigest, computedFileDigest)) {
                     logger.warning("File digest verification has failed on " + block + ".");
-                    return false;
+                    result = false;
+                    break;
                 }
             }
             
-            // Everything matched
-            return true;
+            // NOW try to authenticate the user. According to the spec, 
+            // an exception should be thrown on failure.
+            
+            if (!isCorrectPassword(plaintext, password)) {
+                throw new PasswordIncorrectException();
+            }
+            
+            return result;
             
         } catch (PasswordIncorrectException e) {
             logger.severe("Password incorrect.");

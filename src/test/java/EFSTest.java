@@ -37,7 +37,7 @@ public class EFSTest extends TestCase {
         File[] files = dir.listFiles((d, name) -> name.startsWith("efs.log"));
         
         for (File file : files) {
-            //file.delete();
+            file.delete();
         }
     }
     
@@ -446,9 +446,10 @@ public class EFSTest extends TestCase {
         String password = "MyPassword";
         
         efs.create(filename, username, password);
+        password += "1"; // change the password
         
         try {
-            efs.check_integrity(filename, password+"1");
+            efs.check_integrity(filename, password);
             fail();
         } catch (PasswordIncorrectException e) {
         } finally {
@@ -467,6 +468,60 @@ public class EFSTest extends TestCase {
         try {
             assertEquals(true, efs.check_integrity(filename, password));
         } catch(Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testCheckIntegrityReturnsFalseWhenModifyUsername() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testCheckIntegrity.txt";
+        String metadataFile = filename + "/0";
+        String username = "hxs200010";
+        String password = "MyPassword";
+        
+        efs.create(filename, username, password);
+        assertEquals(true, efs.check_integrity(filename, password));
+        
+        // Now modify some bytes in the metadata,
+        // although we need to make sure and modify something other than the password hash
+        byte[] contents = efs.read_from_file(new File(metadataFile));
+        
+        // Changing hxs200010 to hxs202010
+        contents[5] = (byte) 0x02;
+        efs.save_to_file(contents, new File(metadataFile));
+        
+        try {
+            assertEquals(false, efs.check_integrity(filename, password));
+        } catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testCheckIntegrityReturnsFalseWhenModifyFile() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testCheckIntegrity.txt";
+        String metadataFile = filename + "/0";
+        String username = "hxs200010";
+        String password = "MyPassword";
+        
+        efs.create(filename, username, password);
+        assertEquals(true, efs.check_integrity(filename, password));
+        
+        // Now modify some bytes in the metadata,
+        // although we need to make sure and modify something other than the password hash
+        byte[] contents = efs.read_from_file(new File(metadataFile));
+        
+        // Changing the initial file contents 
+        contents[245] = (byte) 0xa5;
+        efs.save_to_file(contents, new File(metadataFile));
+        
+        try {
+            assertEquals(false, efs.check_integrity(filename, password));
+        } catch (Exception e) {
             throw e;
         } finally {
             deleteDirectory(filename);
