@@ -37,7 +37,7 @@ public class EFSTest extends TestCase {
         File[] files = dir.listFiles((d, name) -> name.startsWith("efs.log"));
         
         for (File file : files) {
-            file.delete();
+            //file.delete();
         }
     }
     
@@ -412,6 +412,8 @@ public class EFSTest extends TestCase {
         
         assertEquals(1, efs.getNumPhysicalFiles(-1));
         assertEquals(1, efs.getNumPhysicalFiles(0));
+        assertEquals(1, efs.getNumPhysicalFiles(1));
+        assertEquals(1, efs.getNumPhysicalFiles(2));
         assertEquals(1, efs.getNumPhysicalFiles(751));
         assertEquals(1, efs.getNumPhysicalFiles(752)); // boundary of first file
         assertEquals(2, efs.getNumPhysicalFiles(753));
@@ -526,5 +528,25 @@ public class EFSTest extends TestCase {
         } finally {
             deleteDirectory(filename);
         }
+    }
+    
+    public void testCheckIntegrityForMultipleFiles() throws Exception {
+        fail();
+    }
+    
+    public void testWriteToFileBlockZero() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testWriteToFileBlockZero.txt";
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        
+        efs.create(filename, username, password);
+        
+        byte[] content = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".getBytes();
+        efs.write(filename, 0, content, password);
+       
+        
+        
     }
 }
