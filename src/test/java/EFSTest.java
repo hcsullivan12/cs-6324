@@ -540,13 +540,47 @@ public class EFSTest extends TestCase {
         String username = "hxs200010";
         String password = "MyPassword";
                 
-        
-        efs.create(filename, username, password);
-        
-        byte[] content = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".getBytes();
-        efs.write(filename, 0, content, password);
-       
-        
-        
+        try {
+            efs.create(filename, username, password);
+            assertEquals(0, efs.length(filename, password));
+
+            // Start at zero
+            
+            // Length = 751
+            String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n"
+                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing.";
+            efs.write(filename, 0, content.getBytes(), password);
+
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(false, new File(filename + "/1").exists());
+            assertEquals(751, efs.length(filename, password));
+
+
+            // Length = 752 ==> Max size for file block 0
+            content += ".";
+            efs.write(filename, 0, content.getBytes(), password);
+
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(false, new File(filename + "/1").exists());
+            assertEquals(752, efs.length(filename, password));
+
+            
+            // Start somewhere in the middle
+            content = "The wave roared towards them with speed and violence they had not anticipated.";
+            efs.write(filename, 100, content.getBytes(), password);
+            
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(false, new File(filename + "/1").exists());
+            
+        }
+        catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testWriteToAndReadFromFileBlockZeroMatches() throws Exception {
+        fail();
     }
 }

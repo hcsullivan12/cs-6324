@@ -227,23 +227,49 @@ public class EFS extends Utility {
      * Decrypt the file metadata.
      * @param metadata The file's metadata
      * @param key
-     * @return Full, plaintext metadata, including header, secrets, and digests.
+     * @return Full, plaintext metadata, including header, secrets, and digest.
      */
     public byte[] decryptMetadata(byte[] metadata, byte[] key) throws Exception {
         logger.info("ENTRY");
 
         // Only a portion of the metadata is encrypted...
         logger.fine("Decrypting secret metadata section...");
-        int headerStart = fieldInfoMap.get(Field.USERNAME).get(FieldInfo.POSITION);
         int startIndex = fieldInfoMap.get(Field.SECRETS).get(FieldInfo.POSITION);
         int endIndex   = startIndex + fieldInfoMap.get(Field.SECRETS).get(FieldInfo.SIZE);
         
-        byte[] encryptedMetadata = Arrays.copyOfRange(metadata, startIndex, endIndex);
-        byte[] secrets = decryptByteArray(encryptedMetadata, key);
+        byte[] secrets = decryptByteArray(
+                Arrays.copyOfRange(metadata, startIndex, endIndex), 
+                key);
         
         // Copy to new array.
         byte[] result = new byte[getMetadataSize(true)];
-        System.arraycopy(metadata, 0,        result, headerStart,                 startIndex);     // copy plaintext header
+        System.arraycopy(metadata, 0,        result, 0,                 startIndex);     // copy plaintext header
+        System.arraycopy(secrets,  0,        result, startIndex,                  secrets.length); // copy plaintext secrets
+        System.arraycopy(metadata, endIndex, result, startIndex + secrets.length, metadata.length - endIndex); // copy the remaining contents of the metadata
+        
+        return result;
+    }
+    
+    /**
+     * Encrypt the file metadata.
+     * @param metadata The file's metadata in plaintext.
+     * @param key
+     * @return Full, ciphertext metadata, including header, secrets, and digest.
+     */
+    public byte[] encryptMetadata(byte[] metadata, byte[] key) throws Exception {
+        logger.info("ENTRY");
+
+        // Only a portion of the metadata is encrypted...
+        int startIndex = fieldInfoMap.get(Field.SECRETS).get(FieldInfo.POSITION);
+        int endIndex   = startIndex + fieldInfoMap.get(Field.SECRETS).get(FieldInfo.SIZE);
+        
+        byte[] secrets = encryptByteArray(
+                Arrays.copyOfRange(metadata, startIndex, endIndex), 
+                key);
+        
+        // Copy to new array.
+        byte[] result = new byte[getMetadataSize(true)];
+        System.arraycopy(metadata, 0,        result, 0,                 startIndex);     // copy plaintext header
         System.arraycopy(secrets,  0,        result, startIndex,                  secrets.length); // copy plaintext secrets
         System.arraycopy(metadata, endIndex, result, startIndex + secrets.length, metadata.length - endIndex); // copy the remaining contents of the metadata
         
@@ -314,6 +340,30 @@ public class EFS extends Utility {
             result = (byteId - fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION)) % (Config.BLOCK_SIZE - getHashOutputSize(FILE_DIGEST_ALG));
         }
         return result;
+    }
+    
+    /**
+     * Updates the length field, called after writing to file.
+     * @param length The new length
+     * @param metadata current metadata in plaintext
+     */
+    private void updateFileLength(int length, File root, byte[] metadata, byte[] key) throws Exception {
+        File fileBlockZero = new File(root, "/0");
+        byte[] contents = read_from_file(fileBlockZero);
+
+        // Update the length field in the metadata
+        writeToField(metadata, Field.FILE_SIZE, integerToBytes(length));
+        
+        // Encrypt it
+        byte[] encryptedMetadata = encryptMetadata(metadata, key);
+        System.arraycopy(encryptedMetadata, 0, contents, 0, encryptedMetadata.length);
+        
+        byte[] fileDigest = computeFileDigest(
+                contents, 
+                key);
+        writeToField(contents, Field.FILE_DIGEST, fileDigest);
+        
+        save_to_file(contents, fileBlockZero);
     }
     
     // END metadata access and info functions
@@ -1183,7 +1233,10 @@ public class EFS extends Utility {
             // Compute the file block endpoints.
             // starting_position starts at 0, and file blocks start at 0.
             int startFileBlock = getNumPhysicalFiles(starting_position + 1) - 1;
-            int endFileBlock   = getNumPhysicalFiles(starting_position + content.length + 1) - 1;
+            int endFileBlock   = getNumPhysicalFiles(starting_position + content.length) - 1;
+
+            // How many content bytes in a file?
+            int nContentBytes = Config.BLOCK_SIZE - fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.SIZE); 
             
             // Are we starting on a file boundary?
             // This will be used in calculating a prefix.
@@ -1192,7 +1245,13 @@ public class EFS extends Utility {
                 isStartingOnBoundary = true;
             }
             
+            boolean didWriteToFirstBlock = false;
+            
             for (int i = startFileBlock; i <= endFileBlock; i++) {
+                
+                //#######################################
+                // Step 2a) Read the encrypted file block and initialize some properties 
+                
                 
                 File currentFileBlock = new File(root, Integer.toString(i));
                 byte[] encryptedContents = null;
@@ -1212,9 +1271,13 @@ public class EFS extends Utility {
                 // The sp and ep variables are the endpoints in the data to write.
                 
                 
-                int lastByteIndex = Config.BLOCK_SIZE - fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.SIZE); 
-                int sp = i * lastByteIndex - starting_position;
-                int ep = (i + 1) * lastByteIndex - starting_position;
+                int sp = i * nContentBytes - starting_position;
+                int ep = (i + 1) * nContentBytes - starting_position;
+                
+                // The first file has fewer available bytes for writing
+                if (i == 0) {
+                    ep = Math.min(fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE), content.length);
+                }
                 
                 String prefix = "";  // the data before the starting point 
                 String postfix = ""; // the data after the end point
@@ -1233,7 +1296,7 @@ public class EFS extends Utility {
                         if (i == 0) {
                             
                             int fileContentsIndex = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION);
-                            prefix = temp.substring(fileContentsIndex, starting_position - fileContentsIndex);
+                            prefix = temp.substring(fileContentsIndex, fileContentsIndex + starting_position);
                             
                         } else {
                             prefix = temp.substring(0, starting_position - fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE));
@@ -1267,14 +1330,23 @@ public class EFS extends Utility {
                 
                 //#######################################
                 // Step 2b) Concatenate the prefix, new content, and postfix and pad to the end of the file block
-                    
+                
+                if (didWriteToFirstBlock) {
+                    sp -= fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION);
+                    ep -= fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION);
+                }
+                
                 String newContentString = prefix + byteArray2String(Arrays.copyOfRange(content, sp, ep)) + postfix;
+                
+                int padding = fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION) - newContentString.length();
+                if (i == 0) {
+                    didWriteToFirstBlock = true;
+                    padding = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE) - newContentString.length() ;
+                } 
 
-                while (newContentString.length() < fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION)) {
+                for (int p = 0; p < padding; p++) {
                     newContentString += '\0';
                 }
-                logger.fine("Writing new string to file block " + i);
-                logger.fine(newContentString);
                 
                 //#######################################
                 // Step 2c) Encrypt the updated file block
@@ -1288,7 +1360,7 @@ public class EFS extends Utility {
                 byte[] fileDigest = computeFileDigest(newEncryptedContents, derivedKey);
                 
                 //#######################################
-                // Step 2e) Write the new content to the file block and add new digest
+                // Step 2e) Write the new content to the file block
                 
                 // Copy all data into new array for writing
                 byte[] toWrite = new byte[Config.BLOCK_SIZE];
@@ -1301,11 +1373,23 @@ public class EFS extends Utility {
                     System.arraycopy(newEncryptedContents, 0, toWrite, 0, newEncryptedContents.length);
                 }
                 
+                //#######################################
+                // Step 2d) 
+                
+                
                 // Add the digest to the array
                 writeToField(toWrite, Field.FILE_DIGEST, fileDigest);
                 
                 save_to_file(toWrite, currentFileBlock);
             }
+            
+            //#######################################
+            // Step 3) Update the length field in file block 0
+            int newLength = starting_position + content.length;
+            if (newLength > fileLength) {
+                updateFileLength(newLength, root, plaintextMetadata, derivedKey);
+            }
+
         }
         catch (Exception e) {
             logger.severe("Failed to write content to file " + file_name + ".");
