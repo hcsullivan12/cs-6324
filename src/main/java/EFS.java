@@ -1,4 +1,5 @@
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
@@ -210,7 +211,7 @@ public class EFS extends Utility {
      * @return Metadata as byte array.
      * @throws Exception
      */
-    public byte[] getFileMetadata(String filename) throws Exception {
+    public byte[] getFileMetadata(String filename) throws FileNotFoundException, Exception {
         logger.fine("ENTRY " + filename + ".");
         dir = new File(filename);
         File file = new File(dir, "0");
@@ -219,7 +220,9 @@ public class EFS extends Utility {
             byte[] contents = read_from_file(file);
             return Arrays.copyOfRange(contents, 0, getMetadataSize(true));
         } else {
-            return null;
+            String msg = "Failed to retrieve metadata for file " + filename + ".";
+            logger.severe(msg);
+            throw new FileNotFoundException(msg);
         }
     }
     
@@ -1109,12 +1112,6 @@ public class EFS extends Utility {
         
         try {
             byte[] metadata = getFileMetadata(file_name);
-            if (metadata == null) {
-                String msg = "Failed to retrieve metadata for file " + file_name + ".";
-                logger.severe(msg);
-                throw new Exception(msg);
-            }
-        
             byte[] usernameBytes = getField(metadata, Field.USERNAME, true);
             
             // Find the first zero byte
@@ -1141,11 +1138,6 @@ public class EFS extends Utility {
         
         try {
             byte[] metadata = getFileMetadata(file_name);
-            if (metadata == null) {
-                String msg = "Failed to retrieve metadata for file " + file_name + ".";
-                logger.severe(msg);
-                throw new Exception(msg);
-            }
             
             // We need to decrypt the metadata so we need to authenticate the user
             byte[] salt = getField(metadata, Field.SALT, true);
@@ -1199,11 +1191,6 @@ public class EFS extends Utility {
             // Step 1) Parse the metadata and authenticate the user
             
             byte[] metadata = getFileMetadata(file_name);
-            if (metadata == null) {
-                String msg = "Failed to retrieve metadata for file " + file_name + ".";
-                logger.severe(msg);
-                throw new Exception(msg);
-            }
             
             // Decrypt the metadata so we can authenticate the user
             byte[] salt = getField(metadata, Field.SALT, true);
@@ -1411,11 +1398,6 @@ public class EFS extends Utility {
         
         try {
             byte[] metadata = getFileMetadata(file_name);
-            if (metadata == null) {
-                String msg = "Failed to retrieve metadata for file " + file_name + ".";
-                logger.severe(msg);
-                throw new Exception(msg);
-            }
             
             // It is worthwhile to authenticate the data before the user.
             // Otherwise, an attacker could modify the encrypted metadata 

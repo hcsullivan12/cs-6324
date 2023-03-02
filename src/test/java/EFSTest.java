@@ -1,4 +1,5 @@
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
@@ -37,7 +38,7 @@ public class EFSTest extends TestCase {
         File[] files = dir.listFiles((d, name) -> name.startsWith("efs.log"));
         
         for (File file : files) {
-            //file.delete();
+            file.delete();
         }
     }
     
@@ -259,20 +260,16 @@ public class EFSTest extends TestCase {
         }
     }
     
-    public void testLengthOnMissingFile() throws Exception {
+    public void testFindUserThrowsOnNonExistentFile() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testLength.txt";
+        String filename = "IdoNotExist.txt";
         String username = "hxs200010";
-        String password = "MyP@$$W0Rd!23";
-        
+        String password = "MyPassword";
+                
         try {
-            // Try on non-existent file
-            int length = efs.length(filename, password);
+            efs.findUser(filename);
             fail();
-            
-        } catch (Exception e) {
-        } finally {
-            deleteDirectory(filename);
+        } catch (FileNotFoundException e) {
         }
     }
     
@@ -319,6 +316,19 @@ public class EFSTest extends TestCase {
         }
     }
     
+    public void testLengthThrowsOnNonExistentFile() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "IdoNotExist.txt";
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.length(filename, password);
+            fail();
+        } catch (FileNotFoundException e) {
+        }
+    }
+    
     public void testComputeHmac() throws Exception {
         EFS efs = new EFS(null);
         byte[] key = "key".getBytes(StandardCharsets.US_ASCII);
@@ -355,21 +365,6 @@ public class EFSTest extends TestCase {
             throw e;
         }
     }
-    
-    /*public void testSample() throws Exception {
-        Sample efs = new Sample(null);
-        String filename = "testSample.txt";
-        String username = "hunter";
-        String password = "password";
-        
-        efs.create(filename, username, password);
-        
-        byte[] content = efs.read_from_file(new File("/tmp/test.txt"));
-        efs.write(filename, 0, content, password);
-        
-        efs.write(filename, 0, "Here is my replacement".getBytes(), password);
-        efs.write(filename, 0, "Here is my replacement".getBytes(), password);
-    }*/
     
     public void testEncryptByteArraySuccessOnOneBlock() throws Exception {
         EFS efs = new EFS(null);
@@ -428,16 +423,16 @@ public class EFSTest extends TestCase {
         assertEquals(4, efs.getNumPhysicalFiles(2738));
     }
     
-    public void testCheckIntegrityThrowsOnMissingFile() throws Exception {
+    public void testCheckIntegrityThrowsOnNonExistentFile() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testCheckIntegrity.txt";
+        String filename = "IdoNotExist.txt";
         String username = "hxs200010";
         String password = "MyPassword";
-
+                
         try {
             efs.check_integrity(filename, password);
             fail();
-        } catch (Exception e) {
+        } catch (FileNotFoundException e) {
         }
     }
     
@@ -534,7 +529,7 @@ public class EFSTest extends TestCase {
         fail();
     }
     
-    public void testWriteToFileBlockZero() throws Exception {
+    public void testWriteToFileBlockZeroOnBoundary() throws Exception {
         EFS efs = new EFS(null);
         String filename = "testWriteToFileBlockZero.txt";
         String username = "hxs200010";
@@ -563,14 +558,6 @@ public class EFSTest extends TestCase {
             assertEquals(true, new File(filename + "/0").exists());
             assertEquals(false, new File(filename + "/1").exists());
             assertEquals(752, efs.length(filename, password));
-
-            
-            // Start somewhere in the middle
-            content = "The wave roared towards them with speed and violence they had not anticipated.";
-            efs.write(filename, 100, content.getBytes(), password);
-            
-            assertEquals(true, new File(filename + "/0").exists());
-            assertEquals(false, new File(filename + "/1").exists());
             
         }
         catch (Exception e) {
@@ -580,7 +567,113 @@ public class EFSTest extends TestCase {
         }
     }
     
+    public void testWriteToFileBlockZeroInTheMiddle() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testWriteToFileBlockZero.txt";
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.create(filename, username, password);
+            assertEquals(0, efs.length(filename, password));
+
+            // Start at zero
+            
+            // Length = 432
+            String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n";
+            efs.write(filename, 0, content.getBytes(), password);
+
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(false, new File(filename + "/1").exists());
+            assertEquals(432, efs.length(filename, password));
+
+            // Length = 31 and starting at the end of the previous content
+            content = "Here are some additional words.";
+            efs.write(filename, 432, content.getBytes(), password);
+            
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(false, new File(filename + "/1").exists());
+            assertEquals(463, efs.length(filename, password));
+
+        }
+        catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
     public void testWriteToAndReadFromFileBlockZeroMatches() throws Exception {
+        fail();
+    }
+    
+    public void testWriteFailsOnNonExistentFile() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "IdoNotExist.txt";
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.write(filename, 0, "some content".getBytes(), password);
+            fail();
+        } catch (FileNotFoundException e) {
+        }
+    }
+    
+    public void testWriteFailsOnIncorrectPassword() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testCheckIntegrity.txt";
+        String username = "hxs200010";
+        String password = "MyPassword";
+        
+        efs.create(filename, username, password);
+        password += "1"; // change the password
+        
+        try {
+            efs.write(filename, 0, "some content".getBytes(), password);
+            fail();
+        } catch (PasswordIncorrectException e) {
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testWriteFailsWhenStartPositionGreaterThenCurrentLength() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testWriteFailsStartPosition.txt";
+        String username = "hxs200010";
+        String password = "MyPassword";
+        
+        efs.create(filename, username, password);
+        
+        try {
+            efs.write(filename, 1, "some content".getBytes(), password);
+            fail();
+        } catch (Exception e) {
+        } finally {
+            deleteDirectory(filename);
+        }
+        
+        efs.create(filename, username, password);
+        password += "1"; // change the password
+        
+        try {
+            efs.write(filename, 0, "some content".getBytes(), password);
+            efs.write(filename, 12, "some content".getBytes(), password);
+            fail();
+        } catch (Exception e) {
+        } finally {
+            deleteDirectory(filename);
+        }
+        
+        
+    }
+    
+    public void testAllOpsWhenPasswordIncorrect() throws Exception {
+        fail();
+    }
+    
+    public void testAllOpsWhenFileDoesNotExist() throws Exception {
         fail();
     }
 }
