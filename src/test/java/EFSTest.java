@@ -723,10 +723,12 @@ public class EFSTest extends TestCase {
 
             // Start at zero
 
-            // 0 - something
+            // Write some content
             String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n"
                     + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing.";
             efs.write(filename, 0, content.getBytes(), password);
+            
+            // Try to read from 0 - 23
             String result = new String(efs.read(filename, 0, 23, password));
             assertEquals(0, result.compareTo("The wave roared towards"));
             
@@ -738,7 +740,7 @@ public class EFSTest extends TestCase {
         catch (Exception e) {
             throw e;
         } finally {
-            //deleteDirectory(filename);
+            deleteDirectory(filename);
         }
     }
     

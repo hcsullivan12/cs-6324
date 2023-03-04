@@ -1227,22 +1227,28 @@ public class EFS extends Utility {
                 }
                 
                 // Decrypt the file
-                byte[] removeme = decryptFileBlock(i, encryptedContents, fek);
-                String temp = byteArray2String(removeme);
+                String temp = byteArray2String(decryptFileBlock(i, encryptedContents, fek));
                 
                 //#######################################
                 // Step 2b) Grab the content and append to the result 
                 
                 // End block first is more convenient
                 if (i == endFileBlock) {
-                    temp = temp.substring(0, convertToFilePosition(starting_position + len));
+                    if (i == 0) {
+                        temp = temp.substring(0, starting_position + len);
+                        
+                    } else {
+                        temp = temp.substring(0, convertToFilePosition(starting_position + len - 1));
+                    }
                 }
                 
                 if (i == startFileBlock) {
-                    temp = temp.substring(
-                            convertToFilePosition(starting_position),
-                            fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION));
+                    if (i == 0) {
+                        temp = temp.substring(starting_position);
                         
+                    } else {
+                        temp = temp.substring(convertToFilePosition(starting_position));
+                    }
                 }
                 
                 result += temp;
@@ -1383,7 +1389,7 @@ public class EFS extends Utility {
 
                         // Decrypt the file
                         String temp = byteArray2String(decryptFileBlock(i, encryptedContents, fek));
-                        int lastContentIndex = convertToFilePosition(starting_position + content.length);
+                        int lastContentIndex = convertToFilePosition(starting_position + content.length - 1);
 
                         if (temp.length() > lastContentIndex) {
                             postfix = temp.substring(lastContentIndex);
