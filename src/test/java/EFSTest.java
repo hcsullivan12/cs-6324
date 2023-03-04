@@ -603,10 +603,6 @@ public class EFSTest extends TestCase {
         }
     }
     
-    public void testWriteToAndReadFromFileBlockZeroMatches() throws Exception {
-        fail();
-    }
-    
     public void testWriteFailsOnNonExistentFile() throws Exception {
         EFS efs = new EFS(null);
         String filename = "IdoNotExist.txt";
@@ -665,8 +661,85 @@ public class EFSTest extends TestCase {
         } finally {
             deleteDirectory(filename);
         }
+    }
+    
+    public void testReadFailsOnNonExistentFile() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "IdoNotExist.txt";
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.read(filename, 0, 0, password);
+            fail();
+        } catch (FileNotFoundException e) {
+        }
+    }
+    
+    public void testReadFailsOnIncorrectPassword() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testCheckIntegrity.txt";
+        String username = "hxs200010";
+        String password = "MyPassword";
         
+        efs.create(filename, username, password);
+        password += "1"; // change the password
         
+        try {
+            efs.read(filename, 0, 0, password);
+            fail();
+        } catch (PasswordIncorrectException e) {
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+
+    public void testReadFailsWhenReadingMoreThanLength() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testCheckIntegrity.txt";
+        String username = "hxs200010";
+        String password = "MyPassword";
+        
+        efs.create(filename, username, password);
+        
+        try {
+            efs.read(filename, 0, 1, password);
+            fail();
+        } catch (Exception e) {
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testReadFileBlockZeroIsSuccess() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "testWriteToFileBlockZero.txt";
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.create(filename, username, password);
+            assertEquals(0, efs.length(filename, password));
+
+            // Start at zero
+
+            // 0 - something
+            String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n"
+                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing.";
+            efs.write(filename, 0, content.getBytes(), password);
+            String result = new String(efs.read(filename, 0, 23, password));
+            assertEquals(0, result.compareTo("The wave roared towards"));
+            
+            // something1 - something2
+            result = new String(efs.read(filename, 23, 20, password));
+            assertEquals(0, result.compareTo(" them with speed and"));
+            
+        }
+        catch (Exception e) {
+            throw e;
+        } finally {
+            //deleteDirectory(filename);
+        }
     }
     
     public void testAllOpsWhenPasswordIncorrect() throws Exception {

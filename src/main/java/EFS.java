@@ -659,7 +659,7 @@ public class EFS extends Utility {
     /**
      * Decrypt an entire file block.
      * @param id The id of the file block, e.g. 0, 1, 2, ...
-     * @param ciphertext The ciphertext contents of the file block.
+     * @param ciphertext The entire file block with file contents encrypted.
      * @param key The key used in decryption.
      * @return plaintext file contents
      */
@@ -679,8 +679,10 @@ public class EFS extends Utility {
             endIndex = fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION);
         }
         
+        byte[] removeme = Arrays.copyOfRange(ciphertext, startIndex, endIndex); 
+        
         return decryptByteArray(
-                Arrays.copyOfRange(ciphertext, startIndex, endIndex), 
+                removeme, 
                 key, 
                 aesCounter);
     }
@@ -697,7 +699,8 @@ public class EFS extends Utility {
         int endIndex = 0;
         int aesCounter = 0;
         
-        if (id == 0) {
+        // TODO Remove me
+        /*if (id == 0) {
             // We have metadata to subtract out
             startIndex = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION);
             endIndex = startIndex + fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE);
@@ -706,10 +709,10 @@ public class EFS extends Utility {
             // aesCounter = block 0 size + (id - 1) * block 1 size 
             aesCounter = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE) + (id - 1) * fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION);
             endIndex = fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION);
-        }
+        }*/
         
         return encryptByteArray(
-                Arrays.copyOfRange(plaintext, startIndex, endIndex), 
+                plaintext, // TODO Remove me Arrays.copyOfRange(plaintext, startIndex, endIndex), 
                 key, 
                 aesCounter);
     }
@@ -1170,7 +1173,87 @@ public class EFS extends Utility {
      */
     @Override
     public byte[] read(String file_name, int starting_position, int len, String password) throws Exception {
-        throw new PasswordIncorrectException();
+        logger.fine("ENTRY file_name = " + file_name + " starting_position = " + starting_position + " len = " + len + ".");
+        
+        try {
+            
+            //#######################################
+            // Step 1) Parse the metadata and authenticate the user
+            
+            byte[] metadata = getFileMetadata(file_name);
+            
+            // Decrypt the metadata so we can authenticate the user
+            byte[] salt = getField(metadata, Field.SALT, true);
+            byte[] derivedKey = computeDerivedKey(password.getBytes(CHARACTER_SET), salt);
+            byte[] plaintextMetadata = decryptMetadata(metadata, derivedKey);
+            byte[] fek = getField(plaintextMetadata, Field.FEK, false);
+
+            if (!isCorrectPassword(plaintextMetadata, password)) {
+                throw new PasswordIncorrectException();
+            }
+
+            // Make sure the starting position is not greater than the current file length
+            int fileLength = 0;
+            fileLength = bytesToInteger(getField(plaintextMetadata, Field.FILE_SIZE, false));
+
+            if ((starting_position + len) > fileLength) {
+                throw new Exception("Starting position for write (" + starting_position
+                        + ") and length (" + len + ") is >= the current file length (" + fileLength + ").");
+            }
+            
+            //#######################################
+            // Step 2) Determine relevant file blocks loop over them
+
+            // And here... we... go...
+            File root = new File(file_name);
+            
+            // Compute the file block endpoints.
+            // starting_position starts at 0, and file blocks start at 0.
+            int startFileBlock = getNumPhysicalFiles(starting_position + 1) - 1;
+            int endFileBlock   = getNumPhysicalFiles(starting_position + len) - 1;
+            
+            String result = "";
+            
+            for (int i = startFileBlock; i <= endFileBlock; i++) {
+                
+                //#######################################
+                // Step 2a) Decrypt this file block 
+                
+                File currentFileBlock = new File(root, Integer.toString(i));
+                byte[] encryptedContents = null;
+                
+                if (currentFileBlock.exists()) {
+                    encryptedContents = read_from_file(currentFileBlock);
+                }
+                
+                // Decrypt the file
+                byte[] removeme = decryptFileBlock(i, encryptedContents, fek);
+                String temp = byteArray2String(removeme);
+                
+                //#######################################
+                // Step 2b) Grab the content and append to the result 
+                
+                // End block first is more convenient
+                if (i == endFileBlock) {
+                    temp = temp.substring(0, convertToFilePosition(starting_position + len));
+                }
+                
+                if (i == startFileBlock) {
+                    temp = temp.substring(
+                            convertToFilePosition(starting_position),
+                            fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION));
+                        
+                }
+                
+                result += temp;
+            }
+
+            return result.getBytes("UTF-8");
+            
+        } catch (Exception e) {
+            logger.severe("Failed to read from " + file_name + ".");
+            throw e;
+        }
     }
 
     /**
@@ -1277,13 +1360,11 @@ public class EFS extends Utility {
                     // If we're at the start of a new file block, there is nothing to do.
                     if (!isStartingOnBoundary) {
                         
-                        // Decrypt the file
+                        // Decrypt the file contents.
                         String temp = byteArray2String(decryptFileBlock(i, encryptedContents, fek));
 
                         if (i == 0) {
-                            
-                            int fileContentsIndex = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION);
-                            prefix = temp.substring(fileContentsIndex, fileContentsIndex + starting_position);
+                            prefix = temp.substring(0, starting_position);
                             
                         } else {
                             prefix = temp.substring(0, starting_position - fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE));
@@ -1336,21 +1417,11 @@ public class EFS extends Utility {
                 }
                 
                 //#######################################
-                // Step 2c) Encrypt the updated file block
+                // Step 2c) Encrypt the updated file block contents and write to new array
+                
+                byte[] toWrite = new byte[Config.BLOCK_SIZE];
                 
                 byte[] newEncryptedContents = encryptFileBlock(i, newContentString.getBytes(), fek);
-                
-                //#######################################
-                // Step 2d) Recompute the file digest
-                
-                logger.fine("Computing file digest for file block " + i + " using derived key...");
-                byte[] fileDigest = computeFileDigest(newEncryptedContents, derivedKey);
-                
-                //#######################################
-                // Step 2e) Write the new content to the file block
-                
-                // Copy all data into new array for writing
-                byte[] toWrite = new byte[Config.BLOCK_SIZE];
                 
                 if (i == 0) {
                     System.arraycopy(encryptedContents,    0, toWrite, 0, fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION)); // copy metadata
@@ -1361,10 +1432,10 @@ public class EFS extends Utility {
                 }
                 
                 //#######################################
-                // Step 2d) 
+                // Step 2d) Recompute the file digest
                 
-                
-                // Add the digest to the array
+                logger.fine("Computing file digest for file block " + i + " using derived key...");
+                byte[] fileDigest = computeFileDigest(toWrite, derivedKey);
                 writeToField(toWrite, Field.FILE_DIGEST, fileDigest);
                 
                 save_to_file(toWrite, currentFileBlock);
