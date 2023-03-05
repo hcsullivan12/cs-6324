@@ -573,7 +573,7 @@ public class EFSTest extends TestCase {
         }
     }
     
-    public void testWriteToFileBlockZeroInTheMiddle() throws Exception {
+    public void testWriteToFileBlockZeroAppendToEnd() throws Exception {
         EFS efs = new EFS(null);
         String filename = getTemporaryFile();
         String username = "hxs200010";
@@ -878,11 +878,76 @@ public class EFSTest extends TestCase {
             efs.write(filename, 0, content.getBytes(), password);
 
             // Attempting to read across file blocks
-            System.out.println(content.substring(726, 726 + 39));
             String result = new String(efs.read(filename, 726, 39, password));
-            System.out.println(result);
             assertEquals(0, result.compareTo("pictures of them chasing.. Here is some"));
             
+        }
+        catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testReadFromFileBlockOneAcrossBoundary() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = getTemporaryFile();
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.create(filename, username, password);
+            assertEquals(0, efs.length(filename, password));
+
+            // Start at zero
+            
+            // Length = 1739 + 20 
+            String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n"
+                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing."
+                    + "It went through such rapid contortions that the little bear was forced to change his hold on it so many times he became confused in the darkness, and could not, for the life of him, tell whether he held the sheep right side up, or upside down. But that point was decided for him a moment later by the animal itself, who, with a sudden twist, jabbed its horns so hard into his lowest ribs that he gave a grunt of anger and disgust."
+                    + "This is important to remember. Love isn't like pie. You don't need to divide it among all your friends and loved ones. No matter how much love you give, you can always give more. It doesn't run out, so don't try to hold back giving it as if it may one day run out. Give it freely and as much as you want."
+                    + "The words hadn't flowed from his fingers for the past few weeks. He never imagined he'd find himself with writer's block, but here he sat with a blank screen in front of him. That blank screen taunting him day after day had started to play with his mind."
+                    + ". Here is some more.";
+            efs.write(filename, 0, content.getBytes(), password);
+            
+            // Attempting to read across file blocks
+            String result = new String(efs.read(filename, 1725, 23, password));
+            assertEquals(0, result.compareTo("with his mind.. Here is"));
+        }
+        catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testOverwriteInFileBlockOne() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = getTemporaryFile();
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.create(filename, username, password);
+            assertEquals(0, efs.length(filename, password));
+
+            // Start at zero, write some content, read it all, overwrite something in the middle, read it all
+
+            // Length = 136
+            String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late.";
+            efs.write(filename, 0, content.getBytes(), password);
+            assertEquals(136, efs.length(filename, password));
+            
+            byte[] result = efs.read(filename, 0, 136, password);
+            assertEquals(0, new String(result).compareTo("The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late."));
+            
+            // replacing "with speed and violence" with "here is some random stf"
+            efs.write(filename, 29, "here is some random stf".getBytes(), password);
+            assertEquals(136, efs.length(filename, password));
+
+            result = efs.read(filename, 0, 136, password);
+            System.out.println(new String(result));
+            assertEquals(0, new String(result).compareTo("The wave roared towards them here is some random stf they had not anticipated. They both turned to run but by that time it was too late."));
             
         }
         catch (Exception e) {

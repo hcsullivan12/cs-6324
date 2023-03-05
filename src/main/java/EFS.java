@@ -1327,8 +1327,6 @@ public class EFS extends Utility {
                 isStartingOnBoundary = true;
             }
             
-            boolean didWriteToFirstBlock = false;
-            
             for (int i = startFileBlock; i <= endFileBlock; i++) {
                 
                 //#######################################
@@ -1358,7 +1356,7 @@ public class EFS extends Utility {
                 
                 // The first file has fewer available bytes for writing
                 if (i == 0) {
-                    ep = Math.min(fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE), content.length);
+                    ep = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE);
                 } 
                 if (i != 0 && startFileBlock == 0) {
                     sp -= fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION);
@@ -1399,10 +1397,14 @@ public class EFS extends Utility {
 
                         // Decrypt the file
                         String temp = byteArray2String(decryptFileBlock(i, encryptedContents, fek));
-                        int lastContentIndex = convertToFilePosition(starting_position + content.length - 1);
+                        int lastContentIndex = starting_position + content.length - 1;
+                        
+                        if (i != 0) {
+                            lastContentIndex = convertToFilePosition(lastContentIndex);
+                        }
 
                         if (temp.length() > lastContentIndex) {
-                            postfix = temp.substring(lastContentIndex);
+                            postfix = temp.substring(lastContentIndex+1);
                         }
                         else {
                             postfix = "";
@@ -1419,7 +1421,6 @@ public class EFS extends Utility {
                 
                 int padding = fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION) - newContentString.length();
                 if (i == 0) {
-                    didWriteToFirstBlock = true;
                     padding = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE) - newContentString.length() ;
                 } 
 
