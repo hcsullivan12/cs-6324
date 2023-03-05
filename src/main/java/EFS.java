@@ -340,7 +340,7 @@ public class EFS extends Utility {
             
         } else {
             // Subtract off the first file block and mod by the max size of the other file blocks
-            result = (byteId - fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION)) % (Config.BLOCK_SIZE - getHashOutputSize(FILE_DIGEST_ALG));
+            result = (byteId - fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE)) % (Config.BLOCK_SIZE - getHashOutputSize(FILE_DIGEST_ALG));
         }
         return result;
     }
@@ -710,6 +710,11 @@ public class EFS extends Utility {
             aesCounter = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE) + (id - 1) * fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION);
             endIndex = fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION);
         }*/
+        
+        // aesCounter = block 0 size + (id - 1) * block 1 size
+        if (id != 0) {
+            aesCounter = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE) + (id - 1) * fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION);
+        }
         
         return encryptByteArray(
                 plaintext, // TODO Remove me Arrays.copyOfRange(plaintext, startIndex, endIndex), 
@@ -1238,7 +1243,8 @@ public class EFS extends Utility {
                         temp = temp.substring(0, starting_position + len);
                         
                     } else {
-                        temp = temp.substring(0, convertToFilePosition(starting_position + len - 1));
+                        int fp = convertToFilePosition(starting_position + len - 1);
+                        temp = temp.substring(0, fp+1);
                     }
                 }
                 
@@ -1353,6 +1359,10 @@ public class EFS extends Utility {
                 // The first file has fewer available bytes for writing
                 if (i == 0) {
                     ep = Math.min(fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE), content.length);
+                } 
+                if (i != 0 && startFileBlock == 0) {
+                    sp -= fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION);
+                    ep -= fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION);
                 }
                 
                 String prefix = "";  // the data before the starting point 
@@ -1404,11 +1414,6 @@ public class EFS extends Utility {
                 
                 //#######################################
                 // Step 2b) Concatenate the prefix, new content, and postfix and pad to the end of the file block
-                
-                if (didWriteToFirstBlock) {
-                    sp -= fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION);
-                    ep -= fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION);
-                }
                 
                 String newContentString = prefix + byteArray2String(Arrays.copyOfRange(content, sp, ep)) + postfix;
                 

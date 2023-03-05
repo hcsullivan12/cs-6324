@@ -1,7 +1,9 @@
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
 import java.util.Arrays;
+import java.util.Calendar;
 
 import junit.framework.Test;
 import junit.framework.TestCase;
@@ -23,6 +25,10 @@ public class EFSTest extends TestCase {
             }
             dir.delete();
         }
+    }
+    
+    private String getTemporaryFile() {
+        return "test-" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(Calendar.getInstance().getTime()) + ".txt";
     }
     
     public EFSTest( String testName ) {
@@ -90,7 +96,7 @@ public class EFSTest extends TestCase {
     
     public void testCreateFile() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testFile.txt";
+        String filename = getTemporaryFile();
         String username = "hxs200010";
         String password = "MyPassword";
 
@@ -115,7 +121,7 @@ public class EFSTest extends TestCase {
     
     public void testCreateExistingFile() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testFile.txt";
+        String filename = getTemporaryFile();
         String username = "hxs200010";
         String password = "MyPassword";
 
@@ -143,7 +149,7 @@ public class EFSTest extends TestCase {
     
     public void testCreateFailsOnBadPath() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testFile.txt";
+        String filename = getTemporaryFile();
         String username = "hxs200010";
         String password = "MyPassword";
         
@@ -158,7 +164,7 @@ public class EFSTest extends TestCase {
     
     public void testCreateFailsOnTooLongUsername() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testFile.txt";
+        String filename = getTemporaryFile();
         String username = "";
         String password = "MyPassword";
         
@@ -194,7 +200,7 @@ public class EFSTest extends TestCase {
     
     public void testCreateFailsOnTooLongPassword() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testFile.txt";
+        String filename = getTemporaryFile();
         String username = "hunter";
         String password = "";
         
@@ -230,7 +236,7 @@ public class EFSTest extends TestCase {
     
     public void testFindUserFailsOnMissingFile() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testFindUser.txt";
+        String filename = getTemporaryFile();
         
         try {
             // Find user for non-existent file
@@ -242,7 +248,7 @@ public class EFSTest extends TestCase {
     
     public void testFindUserSucceeds() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testFindUser.txt";
+        String filename = getTemporaryFile();
         
         try {
             // Now try it on a real file
@@ -275,7 +281,7 @@ public class EFSTest extends TestCase {
     
     public void testLengthOnNewFile() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testLength.txt";
+        String filename = getTemporaryFile();
         String username = "hxs200010";
         String password = "MyP@$$W0Rd!23";
         
@@ -293,7 +299,7 @@ public class EFSTest extends TestCase {
     
     public void testLengthThrowsPasswordIncorrectException() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testLength.txt";
+        String filename = getTemporaryFile();
         String username = "hxs200010";
         String password = "MyP@$$W0Rd!23";
         
@@ -438,7 +444,7 @@ public class EFSTest extends TestCase {
     
     public void testCheckIntegrityThrowsOnIncorrectPassword() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testCheckIntegrity.txt";
+        String filename = getTemporaryFile();
         String username = "hxs200010";
         String password = "MyPassword";
         
@@ -456,7 +462,7 @@ public class EFSTest extends TestCase {
     
     public void testCheckIntegrityPassesOnNewFile() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testCheckIntegrity.txt";
+        String filename = getTemporaryFile();
         String username = "hxs200010";
         String password = "MyPassword";
         
@@ -473,7 +479,7 @@ public class EFSTest extends TestCase {
     
     public void testCheckIntegrityReturnsFalseWhenModifyUsername() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testCheckIntegrity.txt";
+        String filename = getTemporaryFile();
         String metadataFile = filename + "/0";
         String username = "hxs200010";
         String password = "MyPassword";
@@ -500,7 +506,7 @@ public class EFSTest extends TestCase {
     
     public void testCheckIntegrityReturnsFalseWhenModifyFile() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testCheckIntegrity.txt";
+        String filename = getTemporaryFile();
         String metadataFile = filename + "/0";
         String username = "hxs200010";
         String password = "MyPassword";
@@ -531,7 +537,7 @@ public class EFSTest extends TestCase {
     
     public void testWriteToFileBlockZeroOnBoundary() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testWriteToFileBlockZero.txt";
+        String filename = getTemporaryFile();
         String username = "hxs200010";
         String password = "MyPassword";
                 
@@ -569,7 +575,7 @@ public class EFSTest extends TestCase {
     
     public void testWriteToFileBlockZeroInTheMiddle() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testWriteToFileBlockZero.txt";
+        String filename = getTemporaryFile();
         String username = "hxs200010";
         String password = "MyPassword";
                 
@@ -618,7 +624,7 @@ public class EFSTest extends TestCase {
     
     public void testWriteFailsOnIncorrectPassword() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testCheckIntegrity.txt";
+        String filename = getTemporaryFile();
         String username = "hxs200010";
         String password = "MyPassword";
         
@@ -636,7 +642,7 @@ public class EFSTest extends TestCase {
     
     public void testWriteFailsWhenStartPositionGreaterThenCurrentLength() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testWriteFailsStartPosition.txt";
+        String filename = getTemporaryFile();
         String username = "hxs200010";
         String password = "MyPassword";
         
@@ -663,6 +669,113 @@ public class EFSTest extends TestCase {
         }
     }
     
+    public void testWriteToFileBlockZeroAcrossBoundary() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = getTemporaryFile();
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.create(filename, username, password);
+            assertEquals(0, efs.length(filename, password));
+
+            // Start at zero
+            
+            // Length = 751
+            String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n"
+                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing.";
+
+            // Length = 771 ==> Max size for file block == 752
+            content += ". Here is some more.";
+            efs.write(filename, 0, content.getBytes(), password);
+
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(true, new File(filename + "/1").exists());
+            assertEquals(771, efs.length(filename, password));
+            
+        }
+        catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testWriteToFileBlockOneOnBoundary() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = getTemporaryFile();
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.create(filename, username, password);
+            assertEquals(0, efs.length(filename, password));
+
+            // Start at zero
+            
+            // Length = 1486
+            String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n"
+                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing."
+                    + "It went through such rapid contortions that the little bear was forced to change his hold on it so many times he became confused in the darkness, and could not, for the life of him, tell whether he held the sheep right side up, or upside down. But that point was decided for him a moment later by the animal itself, who, with a sudden twist, jabbed its horns so hard into his lowest ribs that he gave a grunt of anger and disgust.\n"
+                    + "This is important to remember. Love isn't like pie. You don't need to divide it among all your friends and loved ones. No matter how much love you give, you can always give more. It doesn't run out, so don't try to hold back giving it as if it may one day run out. Give it freely and as much as you want.";
+            efs.write(filename, 0, content.getBytes(), password);
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(true, new File(filename + "/1").exists());
+            assertEquals(1486, efs.length(filename, password));
+            
+            // Length = 752 + 992 = 1744 ==> Max size for file block 0 and 1
+            content += "The words hadn't flowed from his fingers for the past few weeks. He never imagined he'd find himself with writer's block, but here he sat with a blank screen in front of him. That blank screen taunting him day after day had started to play with his mind.....";
+            efs.write(filename, 0, content.getBytes(), password);
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(true, new File(filename + "/1").exists());
+            assertEquals(false, new File(filename + "/2").exists());
+            assertEquals(1744, efs.length(filename, password));
+            
+        }
+        catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testWriteToFileBlockOneAcrossBoundary() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = getTemporaryFile();
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.create(filename, username, password);
+            assertEquals(0, efs.length(filename, password));
+
+            // Start at zero
+            
+            // Length = 1739
+            String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n"
+                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing."
+                    + "It went through such rapid contortions that the little bear was forced to change his hold on it so many times he became confused in the darkness, and could not, for the life of him, tell whether he held the sheep right side up, or upside down. But that point was decided for him a moment later by the animal itself, who, with a sudden twist, jabbed its horns so hard into his lowest ribs that he gave a grunt of anger and disgust."
+                    + "This is important to remember. Love isn't like pie. You don't need to divide it among all your friends and loved ones. No matter how much love you give, you can always give more. It doesn't run out, so don't try to hold back giving it as if it may one day run out. Give it freely and as much as you want."
+                    + "The words hadn't flowed from his fingers for the past few weeks. He never imagined he'd find himself with writer's block, but here he sat with a blank screen in front of him. That blank screen taunting him day after day had started to play with his mind.";
+            
+            // Length = 1759
+            content += ". Here is some more.";
+            efs.write(filename, 0, content.getBytes(), password);
+            
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(true, new File(filename + "/1").exists());
+            assertEquals(true, new File(filename + "/2").exists());
+            assertEquals(false, new File(filename + "/3").exists());
+            assertEquals(1759, efs.length(filename, password));
+            
+        }
+        catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
     public void testReadFailsOnNonExistentFile() throws Exception {
         EFS efs = new EFS(null);
         String filename = "IdoNotExist.txt";
@@ -678,7 +791,7 @@ public class EFSTest extends TestCase {
     
     public void testReadFailsOnIncorrectPassword() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testCheckIntegrity.txt";
+        String filename = getTemporaryFile();
         String username = "hxs200010";
         String password = "MyPassword";
         
@@ -696,7 +809,7 @@ public class EFSTest extends TestCase {
 
     public void testReadFailsWhenReadingMoreThanLength() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testCheckIntegrity.txt";
+        String filename = getTemporaryFile();
         String username = "hxs200010";
         String password = "MyPassword";
         
@@ -713,7 +826,7 @@ public class EFSTest extends TestCase {
     
     public void testReadFileBlockZeroIsSuccess() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "testWriteToFileBlockZero.txt";
+        String filename = getTemporaryFile();
         String username = "hxs200010";
         String password = "MyPassword";
                 
@@ -735,6 +848,41 @@ public class EFSTest extends TestCase {
             // something1 - something2
             result = new String(efs.read(filename, 23, 20, password));
             assertEquals(0, result.compareTo(" them with speed and"));
+            
+        }
+        catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testReadFromFileBlockZeroAcrossBoundary() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = getTemporaryFile();
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.create(filename, username, password);
+            assertEquals(0, efs.length(filename, password));
+
+            // Start at zero
+            
+            // Length = 751
+            String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n"
+                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing.";
+
+            // Length = 771 ==> Max size for file block == 752
+            content += ". Here is some more.";
+            efs.write(filename, 0, content.getBytes(), password);
+
+            // Attempting to read across file blocks
+            System.out.println(content.substring(726, 726 + 39));
+            String result = new String(efs.read(filename, 726, 39, password));
+            System.out.println(result);
+            assertEquals(0, result.compareTo("pictures of them chasing.. Here is some"));
+            
             
         }
         catch (Exception e) {
