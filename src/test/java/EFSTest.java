@@ -531,8 +531,6 @@ public class EFSTest extends TestCase {
         }
     }
     
-    
-    
     public void testWriteToFileBlockZeroOnBoundary() throws Exception {
         EFS efs = new EFS(null);
         String filename = getTemporaryFile();
@@ -1233,11 +1231,102 @@ public class EFSTest extends TestCase {
         }
     }
     
-    public void testAllOpsWhenPasswordIncorrect() throws Exception {
-        fail();
+    public void testCutFailsOnIncorrectPassword() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = getTemporaryFile();
+        String username = "hxs200010";
+        String password = "MyPassword";
+        
+        efs.create(filename, username, password);
+        password += "1"; // change the password
+        
+        try {
+            efs.cut(filename, 0, password);
+            fail();
+        } catch (PasswordIncorrectException e) {
+        } finally {
+            deleteDirectory(filename);
+        }
     }
     
-    public void testAllOpsWhenFileDoesNotExist() throws Exception {
-        fail();
+    public void testCutThrowsOnNonExistentFile() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "IdoNotExist.txt";
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.cut(filename, 0, password);
+            fail();
+        } catch (FileNotFoundException e) {
+        }
+    }
+    
+    public void testCutFileBlockZeroIsSuccess() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = getTemporaryFile();
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.create(filename, username, password);
+            assertEquals(0, efs.length(filename, password));
+            assertEquals(true, efs.check_integrity(filename, password));
+
+            // Start at zero
+            
+            // Length = 432
+            String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n";
+            efs.write(filename, 0, content.getBytes(), password);
+            assertEquals(true, efs.check_integrity(filename, password));
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(false, new File(filename + "/1").exists());
+            assertEquals(432, efs.length(filename, password));
+            assertEquals(true, efs.check_integrity(filename, password));
+
+            // Cut it down to length = 350
+            efs.cut(filename, 350, password);
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(false, new File(filename + "/1").exists());
+            assertEquals(350, efs.length(filename, password));
+            assertEquals(true, efs.check_integrity(filename, password));
+            
+            byte[] result = efs.read(filename, 0, 350, password);
+            assertEquals(0, new String(result).compareTo("The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing"));
+            assertEquals(true, efs.check_integrity(filename, password));
+
+        }
+        catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testCutThrowsWhenLengthGreaterThanEqualToCurrentLength() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = "IdoNotExist.txt";
+        String username = "hxs200010";
+        String password = "MyPassword";
+             
+        efs.create(filename, username, password);
+        
+        // Length = 432
+        String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n";
+        efs.write(filename, 0, content.getBytes(), password);
+        
+        try {
+            efs.cut(filename, 433, password);
+            fail();
+        } catch (Exception e) {
+        }
+        
+        try {
+            efs.cut(filename, 432, password);
+            fail();
+        } catch (Exception e) {
+        } finally {
+            deleteDirectory(filename);
+        }
     }
 }

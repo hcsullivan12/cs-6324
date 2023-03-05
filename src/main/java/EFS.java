@@ -706,25 +706,13 @@ public class EFS extends Utility {
         int endIndex = 0;
         int aesCounter = 0;
         
-        // TODO Remove me
-        /*if (id == 0) {
-            // We have metadata to subtract out
-            startIndex = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION);
-            endIndex = startIndex + fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE);
-            
-        } else {
-            // aesCounter = block 0 size + (id - 1) * block 1 size 
-            aesCounter = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE) + (id - 1) * fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION);
-            endIndex = fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION);
-        }*/
-        
         // aesCounter = block 0 size + (id - 1) * block 1 size
         if (id != 0) {
             aesCounter = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE) + (id - 1) * fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION);
         }
         
         return encryptByteArray(
-                plaintext, // TODO Remove me Arrays.copyOfRange(plaintext, startIndex, endIndex), 
+                plaintext,  
                 key, 
                 aesCounter);
     }
@@ -1538,7 +1526,98 @@ public class EFS extends Utility {
      */
     @Override
     public void cut(String file_name, int length, String password) throws Exception {
-        throw new PasswordIncorrectException();
+        logger.fine("ENTRY file_name = " + file_name + " length = " + length + ".");
+        
+        try {
+            
+            //#######################################
+            // Step 1) Parse the metadata and authenticate the user
+            
+            byte[] metadata = getFileMetadata(file_name);
+            
+            // Decrypt the metadata so we can authenticate the user
+            byte[] salt = getField(metadata, Field.SALT, true);
+            byte[] derivedKey = computeDerivedKey(password.getBytes(CHARACTER_SET), salt);
+            byte[] plaintextMetadata = decryptMetadata(metadata, derivedKey);
+            byte[] fek = getField(plaintextMetadata, Field.FEK, false);
+
+            if (!isCorrectPassword(plaintextMetadata, password)) {
+                throw new PasswordIncorrectException();
+            }
+            
+            // Make sure the requested length is not greater than the current file length
+            int fileLength = 0;
+            fileLength = bytesToInteger(getField(plaintextMetadata, Field.FILE_SIZE, false));
+
+            if (length >= fileLength) {
+                throw new Exception("Cannot cut file to a length (" + length + ") >= the file's current length (" + fileLength + ").");
+            }
+            
+            
+            //#######################################
+            // Step 2) Determine last file block and slice it to correct length
+            
+            // Slice the last file block
+            int endFileBlock = getNumPhysicalFiles(length) - 1;
+            
+            File root = new File(file_name);
+            File fileBlock = new File(root, Integer.toString(endFileBlock));
+            byte[] encryptedContents = read_from_file(fileBlock);
+            
+            // Decrypt the file and slice it
+            String contents = byteArray2String(decryptFileBlock(endFileBlock, encryptedContents, fek));
+            contents = contents.substring(0, convertToFilePosition(length));
+            
+            // Pad the contents
+            int padding = fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION) - contents.length();
+            if (endFileBlock == 0) {
+                padding = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE) - contents.length() ;
+            } 
+
+            for (int p = 0; p < padding; p++) {
+                contents += '\0';
+            }
+            
+            //#######################################
+            // Step 3) Encrypt the updated file block contents and write to new array
+            
+            byte[] toWrite = new byte[Config.BLOCK_SIZE];
+            byte[] newEncryptedContents = encryptFileBlock(endFileBlock, contents.getBytes(), fek);
+            
+            if (endFileBlock == 0) {
+                System.arraycopy(encryptedContents,    0, toWrite, 0, fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION)); // copy metadata
+                System.arraycopy(newEncryptedContents, 0, toWrite, fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION), newEncryptedContents.length); // new file contents
+                
+            } else {
+                System.arraycopy(newEncryptedContents, 0, toWrite, 0, newEncryptedContents.length);
+            }
+            
+            //#######################################
+            // Step 4) Recompute the digests and update the length
+            
+            if (endFileBlock == 0) {
+                updateFileLength(length, root, plaintextMetadata, derivedKey);
+                
+            } else {
+                byte[] fileDigest = computeFileDigest(toWrite, derivedKey);
+                writeToField(toWrite, Field.FILE_DIGEST, fileDigest);
+                save_to_file(toWrite, fileBlock);
+            }
+            
+            //#######################################
+            // Step 5) Delete the remaining file blocks
+            
+            int iBlk = endFileBlock + 1;
+            fileBlock = new File(root, Integer.toString(iBlk));
+            
+            while (fileBlock.exists()) {
+                fileBlock.delete();
+                iBlk++;
+                fileBlock = new File(root, Integer.toString(iBlk));
+            }
+        } catch (Exception e) {
+            logger.severe("Failed to cut file " + file_name);
+            throw e;
+        }
     }
-  
 }
