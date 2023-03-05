@@ -361,6 +361,13 @@ public class EFS extends Utility {
         byte[] encryptedMetadata = encryptMetadata(metadata, key);
         System.arraycopy(encryptedMetadata, 0, contents, 0, encryptedMetadata.length);
         
+        // Update the metadata digest
+        byte[] metadataDigest = computeMetadataDigest(
+                encryptedMetadata, 
+                key);
+        writeToField(contents, Field.METADATA_DIGEST, metadataDigest);
+        
+        // Update the file digest
         byte[] fileDigest = computeFileDigest(
                 contents, 
                 key);
@@ -1225,11 +1232,7 @@ public class EFS extends Utility {
                 // Step 2a) Decrypt this file block 
                 
                 File currentFileBlock = new File(root, Integer.toString(i));
-                byte[] encryptedContents = null;
-                
-                if (currentFileBlock.exists()) {
-                    encryptedContents = read_from_file(currentFileBlock);
-                }
+                byte[] encryptedContents = read_from_file(currentFileBlock);
                 
                 // Decrypt the file
                 String temp = byteArray2String(decryptFileBlock(i, encryptedContents, fek));
@@ -1312,14 +1315,17 @@ public class EFS extends Utility {
             // And here... we... go...
             File root = new File(file_name);
             
+            // How many content bytes in a file?
+            int nContentBytes = Config.BLOCK_SIZE - fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.SIZE);
+            
             // Compute the file block endpoints.
             // starting_position starts at 0, and file blocks start at 0.
             int startFileBlock = getNumPhysicalFiles(starting_position + 1) - 1;
             int endFileBlock   = getNumPhysicalFiles(starting_position + content.length) - 1;
-
-            // How many content bytes in a file?
-            int nContentBytes = Config.BLOCK_SIZE - fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.SIZE); 
             
+            int sp = 0;
+            int ep = nContentBytes;
+
             // Are we starting on a file boundary?
             // This will be used in calculating a prefix.
             boolean isStartingOnBoundary = false;
@@ -1332,7 +1338,6 @@ public class EFS extends Utility {
                 //#######################################
                 // Step 2a) Read the encrypted file block and initialize some properties 
                 
-                
                 File currentFileBlock = new File(root, Integer.toString(i));
                 byte[] encryptedContents = null;
                 
@@ -1340,28 +1345,10 @@ public class EFS extends Utility {
                     encryptedContents = read_from_file(currentFileBlock);
                 }
                 
-                // Determine the start and end points in the content array.
-                // Let's say we start in the middle of the file block and
-                // write to the end of the block, but we still have some 
-                // more to write. Then next time around, our starting point
-                // in the content array will need to "subtract" off what
-                // we wrote previously.
-                
-                // Note, starting_position is the content position to start writing to.
-                // The sp and ep variables are the endpoints in the data to write.
-                
-                
-                int sp = i * nContentBytes - starting_position;
-                int ep = (i + 1) * nContentBytes - starting_position;
-                
                 // The first file has fewer available bytes for writing
                 if (i == 0) {
                     ep = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE);
                 } 
-                if (i != 0 && startFileBlock == 0) {
-                    sp -= fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION);
-                    ep -= fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION);
-                }
                 
                 String prefix = "";  // the data before the starting point 
                 String postfix = ""; // the data after the end point
@@ -1383,9 +1370,6 @@ public class EFS extends Utility {
                         } else {
                             prefix = temp.substring(0, starting_position - fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE));
                         }
-                        
-                        // We might have started with < 0, 
-                        sp = Math.max(sp, 0);
                     }
                 }
                     
@@ -1411,13 +1395,16 @@ public class EFS extends Utility {
                         }
                     }
                     ep = Math.min(ep, content.length);
-                    
                 }
                 
                 //#######################################
                 // Step 2b) Concatenate the prefix, new content, and postfix and pad to the end of the file block
                 
                 String newContentString = prefix + byteArray2String(Arrays.copyOfRange(content, sp, ep)) + postfix;
+                
+                // Update endpoints
+                sp = ep;
+                ep += nContentBytes; 
                 
                 int padding = fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION) - newContentString.length();
                 if (i == 0) {
