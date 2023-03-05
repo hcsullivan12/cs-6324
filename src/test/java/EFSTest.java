@@ -921,7 +921,7 @@ public class EFSTest extends TestCase {
         }
     }
     
-    public void testOverwriteInFileBlockOne() throws Exception {
+    public void testOverwriteInFileBlockOneWithNoLengthChange() throws Exception {
         EFS efs = new EFS(null);
         String filename = getTemporaryFile();
         String username = "hxs200010";
@@ -948,6 +948,42 @@ public class EFSTest extends TestCase {
             result = efs.read(filename, 0, 136, password);
             System.out.println(new String(result));
             assertEquals(0, new String(result).compareTo("The wave roared towards them here is some random stf they had not anticipated. They both turned to run but by that time it was too late."));
+            assertEquals(136, efs.length(filename, password));
+            
+        }
+        catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testOverwriteInFileBlockOneWithLengthChange() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = getTemporaryFile();
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.create(filename, username, password);
+            assertEquals(0, efs.length(filename, password));
+
+            // Start at zero, write some content, read it all, overwrite something in the middle, read it all
+
+            // Length = 136
+            String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late.";
+            efs.write(filename, 0, content.getBytes(), password);
+            assertEquals(136, efs.length(filename, password));
+            
+            byte[] result = efs.read(filename, 0, 136, password);
+            assertEquals(0, new String(result).compareTo("The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late."));
+            
+            // replacing "it was too late." with "here is some additional stuff." 
+            efs.write(filename, 120, "here is some additional stuff.".getBytes(), password);
+            assertEquals(150, efs.length(filename, password));
+
+            result = efs.read(filename, 0, 150, password);
+            assertEquals(0, new String(result).compareTo("The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time here is some additional stuff."));
             
         }
         catch (Exception e) {
