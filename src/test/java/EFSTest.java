@@ -697,6 +697,39 @@ public class EFSTest extends TestCase {
         }
     }
     
+    public void testWriteToFileBlockTwo() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = getTemporaryFile();
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.create(filename, username, password);
+            assertEquals(0, efs.length(filename, password));
+
+            // Start at zero
+            
+            // Length = 1796
+            String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n"
+                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing."
+                    + "It went through such rapid contortions that the little bear was forced to change his hold on it so many times he became confused in the darkness, and could not, for the life of him, tell whether he held the sheep right side up, or upside down. But that point was decided for him a moment later by the animal itself, who, with a sudden twist, jabbed its horns so hard into his lowest ribs that he gave a grunt of anger and disgust.\n"
+                    + "This is important to remember. Love isn't like pie. You don't need to divide it among all your friends and loved ones. No matter how much love you give, you can always give more. It doesn't run out, so don't try to hold back giving it as if it may one day run out. Give it freely and as much as you want."
+                    + "The words hadn't flowed from his fingers for the past few weeks. He never imagined he'd find himself with writer's block, but here he sat with a blank screen in front of him. That blank screen taunting him day after day had started to play with his mind. Here are some additional words to go over the boundary.";
+            efs.write(filename, 0, content.getBytes(), password);
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(true, new File(filename + "/1").exists());
+            assertEquals(true, new File(filename + "/2").exists());
+            assertEquals(false, new File(filename + "/3").exists());
+            assertEquals(1796, efs.length(filename, password));
+            
+        }
+        catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
     public void testWriteToFileBlockOneOnBoundary() throws Exception {
         EFS efs = new EFS(null);
         String filename = getTemporaryFile();
@@ -909,6 +942,43 @@ public class EFSTest extends TestCase {
             // Attempting to read across file blocks
             String result = new String(efs.read(filename, 1725, 23, password));
             assertEquals(0, result.compareTo("with his mind.. Here is"));
+        }
+        catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testReadFromFileBlockZeroToFileBlockTwo() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = getTemporaryFile();
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.create(filename, username, password);
+            assertEquals(0, efs.length(filename, password));
+
+            // Start at zero
+            
+            // Length = 1796
+            String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n"
+                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing."
+                    + "It went through such rapid contortions that the little bear was forced to change his hold on it so many times he became confused in the darkness, and could not, for the life of him, tell whether he held the sheep right side up, or upside down. But that point was decided for him a moment later by the animal itself, who, with a sudden twist, jabbed its horns so hard into his lowest ribs that he gave a grunt of anger and disgust.\n"
+                    + "This is important to remember. Love isn't like pie. You don't need to divide it among all your friends and loved ones. No matter how much love you give, you can always give more. It doesn't run out, so don't try to hold back giving it as if it may one day run out. Give it freely and as much as you want."
+                    + "The words hadn't flowed from his fingers for the past few weeks. He never imagined he'd find himself with writer's block, but here he sat with a blank screen in front of him. That blank screen taunting him day after day had started to play with his mind. Here are some additional words to go over the boundary.";
+            efs.write(filename, 0, content.getBytes(), password);
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(true, new File(filename + "/1").exists());
+            assertEquals(true, new File(filename + "/2").exists());
+            assertEquals(false, new File(filename + "/3").exists());
+            assertEquals(1796, efs.length(filename, password));
+            
+            byte[] result = efs.read(filename, 16, 1766, password);
+            int i1 = content.indexOf("towards them with");
+            int i2 = content.indexOf("words to go over");
+            assertEquals(0, new String(result).compareTo(content.substring(i1, i2 + 16))); // add length of "words to go over"
         }
         catch (Exception e) {
             throw e;
@@ -1325,6 +1395,140 @@ public class EFSTest extends TestCase {
             efs.cut(filename, 432, password);
             fail();
         } catch (Exception e) {
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testCutFileBlockOneIsSuccess() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = getTemporaryFile();
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.create(filename, username, password);
+            assertEquals(0, efs.length(filename, password));
+            assertEquals(true, efs.check_integrity(filename, password));
+
+            // Start at zero
+            
+            // Length = 1058
+            String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n"
+                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing."
+                    + "There was a leak in the boat. Nobody had yet noticed it, and nobody would for the next couple of hours. This was a problem since the boat was heading out to sea and while the leak was quite small at the moment, it would be much larger when it was ultimately discovered. John had planned it exactly this way.";
+            efs.write(filename, 0, content.getBytes(), password);
+            assertEquals(true, efs.check_integrity(filename, password));
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(true, new File(filename + "/1").exists());
+            assertEquals(1058, efs.length(filename, password));
+            assertEquals(true, efs.check_integrity(filename, password));
+
+            // Cut it down to length = 850
+            efs.cut(filename, 850, password);
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(true, new File(filename + "/1").exists());
+            assertEquals(850, efs.length(filename, password));
+            assertEquals(true, efs.check_integrity(filename, password));
+            
+            byte[] result = efs.read(filename, 0, 850, password);
+            assertEquals(0, new String(result).compareTo("The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\nThey decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing.There was a leak in the boat. Nobody had yet noticed it, and nobody would for the next couple of ho"));
+            assertEquals(true, efs.check_integrity(filename, password));
+
+        }
+        catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testCutFileBlockOneToZeroIsSuccess() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = getTemporaryFile();
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.create(filename, username, password);
+            assertEquals(0, efs.length(filename, password));
+            assertEquals(true, efs.check_integrity(filename, password));
+
+            // Start at zero
+            
+            // Length = 1058
+            String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n"
+                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing."
+                    + "There was a leak in the boat. Nobody had yet noticed it, and nobody would for the next couple of hours. This was a problem since the boat was heading out to sea and while the leak was quite small at the moment, it would be much larger when it was ultimately discovered. John had planned it exactly this way.";
+            efs.write(filename, 0, content.getBytes(), password);
+            assertEquals(true, efs.check_integrity(filename, password));
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(true, new File(filename + "/1").exists());
+            assertEquals(1058, efs.length(filename, password));
+            assertEquals(true, efs.check_integrity(filename, password));
+
+            // Cut it down to length = 399
+            efs.cut(filename, 399, password);
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(false, new File(filename + "/1").exists());
+            assertEquals(399, efs.length(filename, password));
+            assertEquals(true, efs.check_integrity(filename, password));
+            
+            byte[] result = efs.read(filename, 0, 399, password);
+            assertEquals(0, new String(result).compareTo("The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the"));
+            assertEquals(true, efs.check_integrity(filename, password));
+
+        }
+        catch (Exception e) {
+            throw e;
+        } finally {
+            deleteDirectory(filename);
+        }
+    }
+    
+    public void testCutFileBlockTwoToZeroIsSuccess() throws Exception {
+        EFS efs = new EFS(null);
+        String filename = getTemporaryFile();
+        String username = "hxs200010";
+        String password = "MyPassword";
+                
+        try {
+            efs.create(filename, username, password);
+            assertEquals(0, efs.length(filename, password));
+            assertEquals(true, efs.check_integrity(filename, password));
+
+            // Start at zero
+            
+            // Length = 1058
+            String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n"
+                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing."
+                    + "There was a leak in the boat. Nobody had yet noticed it, and nobody would for the next couple of hours. This was a problem since the boat was heading out to sea and while the leak was quite small at the moment, it would be much larger when it was ultimately discovered. John had planned it exactly this way."
+                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing."
+                    + "There was a leak in the boat. Nobody had yet noticed it, and nobody would for the next couple of hours. This was a problem since the boat was heading out to sea and while the leak was quite small at the moment, it would be much larger when it was ultimately discovered. John had planned it exactly this way."
+                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing.";
+            efs.write(filename, 0, content.getBytes(), password);
+            assertEquals(true, efs.check_integrity(filename, password));
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(true, new File(filename + "/1").exists());
+            assertEquals(true, new File(filename + "/2").exists());
+            assertEquals(false, new File(filename + "/3").exists());
+            assertEquals(2003, efs.length(filename, password));
+            assertEquals(true, efs.check_integrity(filename, password));
+
+            // Cut it down to length = 399
+            efs.cut(filename, 399, password);
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(false, new File(filename + "/1").exists());
+            assertEquals(399, efs.length(filename, password));
+            assertEquals(true, efs.check_integrity(filename, password));
+            
+            byte[] result = efs.read(filename, 0, 399, password);
+            assertEquals(0, new String(result).compareTo("The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the"));
+            assertEquals(true, efs.check_integrity(filename, password));
+
+        }
+        catch (Exception e) {
+            throw e;
         } finally {
             deleteDirectory(filename);
         }

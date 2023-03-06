@@ -989,6 +989,17 @@ public class EFS extends Utility {
         try {
             logger.info("Creating new file " + file_name + " for user " + user_name + ".");
             
+            if (user_name.length() > N_USERNAME_BYTES) {
+                String msg = "Username longer than " + N_USERNAME_BYTES + " bytes.";
+                logger.severe(msg);
+                throw new Exception(msg);
+            }
+            if (password.length() > N_USERNAME_BYTES) {
+                String msg = "Password longer than " + N_USERNAME_BYTES + " bytes.";
+                logger.severe(msg);
+                throw new Exception(msg);
+            }
+            
             dir = new File(file_name);
             if (dir.exists()) {
                 logger.info("The file " + file_name + " already exists.");
@@ -1013,17 +1024,6 @@ public class EFS extends Utility {
             
             //################
             // Begin header section...
-            
-            if (user_name.length() > N_USERNAME_BYTES) {
-                String msg = "Username longer than " + N_USERNAME_BYTES + " bytes.";
-                logger.severe(msg);
-                throw new Exception(msg);
-            }
-            if (password.length() > N_USERNAME_BYTES) {
-                String msg = "Password longer than " + N_USERNAME_BYTES + " bytes.";
-                logger.severe(msg);
-                throw new Exception(msg);
-            }
 
             // Add the username
             byte[] username = new byte[N_USERNAME_BYTES];
@@ -1119,7 +1119,7 @@ public class EFS extends Utility {
             
             // Find the first zero byte
             int i;
-            for (i = 0; i < metadata.length && metadata[i] != 0; i++) {}
+            for (i = 0; i < usernameBytes.length && usernameBytes[i] != 0; i++) {}
             
             return new String(usernameBytes, 0, i, CHARACTER_SET);
             
@@ -1566,7 +1566,12 @@ public class EFS extends Utility {
             
             // Decrypt the file and slice it
             String contents = byteArray2String(decryptFileBlock(endFileBlock, encryptedContents, fek));
-            contents = contents.substring(0, convertToFilePosition(length));
+            
+            if (endFileBlock == 0) {
+                contents = contents.substring(0, length);
+            } else {
+                contents = contents.substring(0, convertToFilePosition(length));
+            }
             
             // Pad the contents
             int padding = fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION) - contents.length();
@@ -1595,14 +1600,15 @@ public class EFS extends Utility {
             //#######################################
             // Step 4) Recompute the digests and update the length
             
-            if (endFileBlock == 0) {
-                updateFileLength(length, root, plaintextMetadata, derivedKey);
-                
-            } else {
+            // Update the file digest unless this is file block 0, 
+            // we will do that next when we update the length
+            if (endFileBlock != 0) {
                 byte[] fileDigest = computeFileDigest(toWrite, derivedKey);
                 writeToField(toWrite, Field.FILE_DIGEST, fileDigest);
                 save_to_file(toWrite, fileBlock);
             }
+            
+            updateFileLength(length, root, plaintextMetadata, derivedKey);
             
             //#######################################
             // Step 5) Delete the remaining file blocks
