@@ -59,7 +59,7 @@ public class EFS extends Utility {
     private int N_FEK_BYTES = 16;
     private int N_LENGTH_BYTES = 4;
     private int AES_BLOCK_SIZE_BYTES = 16;
-    private int N_PBDFK2_ITERATIONS = 1000;
+    private int N_PBDFK2_ITERATIONS = 100000;
     private int DERIVED_KEY_LENGTH = 256;    // setting to same output length of SHA
 
     // This will be used for faster access to metadata field positions.
@@ -686,10 +686,8 @@ public class EFS extends Utility {
             endIndex = fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION);
         }
         
-        byte[] removeme = Arrays.copyOfRange(ciphertext, startIndex, endIndex); 
-        
         return decryptByteArray(
-                removeme, 
+                Arrays.copyOfRange(ciphertext, startIndex, endIndex), 
                 key, 
                 aesCounter);
     }
@@ -702,8 +700,6 @@ public class EFS extends Utility {
      * @return ciphertext file contents.
      */
     public byte[] encryptFileBlock(int id, byte[] plaintext, byte[] key) throws Exception {
-        int startIndex = 0;
-        int endIndex = 0;
         int aesCounter = 0;
         
         // aesCounter = block 0 size + (id - 1) * block 1 size
@@ -974,7 +970,7 @@ public class EFS extends Utility {
         }
         
         // Set username and password
-        //set_username_password();
+        set_username_password();
     }
 
     /**
