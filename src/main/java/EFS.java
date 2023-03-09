@@ -1003,7 +1003,7 @@ public class EFS extends Utility {
             }
             
             // Create the directory for the file
-            boolean dirCreated = dir.mkdir();
+            boolean dirCreated = dir.mkdirs();
             if (!dirCreated) {
                 String msg = "Failed to create the directory for the file " + file_name + ".";
                 logger.severe(msg);
