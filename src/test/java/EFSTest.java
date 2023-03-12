@@ -607,7 +607,7 @@ public class EFSTest extends TestCase {
     
     public void testWriteFailsOnNonExistentFile() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "IdoNotExist.txt";
+        String filename = "IdoNotExist-2.txt";
         String username = "hxs200010";
         String password = "MyPassword";
                 
@@ -807,7 +807,7 @@ public class EFSTest extends TestCase {
     
     public void testReadFailsOnNonExistentFile() throws Exception {
         EFS efs = new EFS(null);
-        String filename = "IdoNotExist.txt";
+        String filename = "IdoNotExist-1.txt";
         String username = "hxs200010";
         String password = "MyPassword";
                 
