@@ -415,18 +415,18 @@ public class EFSTest extends TestCase {
         assertEquals(1, efs.getNumPhysicalFiles(0));
         assertEquals(1, efs.getNumPhysicalFiles(1));
         assertEquals(1, efs.getNumPhysicalFiles(2));
-        assertEquals(1, efs.getNumPhysicalFiles(751));
-        assertEquals(1, efs.getNumPhysicalFiles(752)); // boundary of first file
-        assertEquals(2, efs.getNumPhysicalFiles(753));
-        assertEquals(2, efs.getNumPhysicalFiles(754));
-        assertEquals(2, efs.getNumPhysicalFiles(1743));
-        assertEquals(2, efs.getNumPhysicalFiles(1744)); // boundary of second file
-        assertEquals(3, efs.getNumPhysicalFiles(1745));
-        assertEquals(3, efs.getNumPhysicalFiles(1746));
-        assertEquals(3, efs.getNumPhysicalFiles(2735));
-        assertEquals(3, efs.getNumPhysicalFiles(2736));
-        assertEquals(4, efs.getNumPhysicalFiles(2737));
-        assertEquals(4, efs.getNumPhysicalFiles(2738));
+        assertEquals(1, efs.getNumPhysicalFiles(736));
+        assertEquals(2, efs.getNumPhysicalFiles(737)); // boundary of first file
+        assertEquals(2, efs.getNumPhysicalFiles(738));
+        assertEquals(2, efs.getNumPhysicalFiles(739));
+        assertEquals(2, efs.getNumPhysicalFiles(1712));
+        assertEquals(3, efs.getNumPhysicalFiles(1713)); // boundary of second file
+        assertEquals(3, efs.getNumPhysicalFiles(1714));
+        assertEquals(3, efs.getNumPhysicalFiles(1715));
+        assertEquals(3, efs.getNumPhysicalFiles(2688));
+        assertEquals(4, efs.getNumPhysicalFiles(2689)); // boundary of third file
+        assertEquals(4, efs.getNumPhysicalFiles(2790));
+        assertEquals(4, efs.getNumPhysicalFiles(2791));
     }
     
     public void testCheckIntegrityThrowsOnNonExistentFile() throws Exception {
@@ -543,23 +543,23 @@ public class EFSTest extends TestCase {
 
             // Start at zero
             
-            // Length = 751
+            // Length = 735
             String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n"
-                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing.";
+                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures ";
             efs.write(filename, 0, content.getBytes(), password);
 
             assertEquals(true, new File(filename + "/0").exists());
             assertEquals(false, new File(filename + "/1").exists());
-            assertEquals(751, efs.length(filename, password));
+            assertEquals(735, efs.length(filename, password));
 
 
-            // Length = 752 ==> Max size for file block 0
+            // Length = 736 ==> Max size for file block 0
             content += ".";
             efs.write(filename, 0, content.getBytes(), password);
 
             assertEquals(true, new File(filename + "/0").exists());
             assertEquals(false, new File(filename + "/1").exists());
-            assertEquals(752, efs.length(filename, password));
+            assertEquals(736, efs.length(filename, password));
             
         }
         catch (Exception e) {
@@ -581,21 +581,21 @@ public class EFSTest extends TestCase {
 
             // Start at zero
             
-            // Length = 432
-            String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n";
+            // Length = 420
+            String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the tri";
             efs.write(filename, 0, content.getBytes(), password);
 
             assertEquals(true, new File(filename + "/0").exists());
             assertEquals(false, new File(filename + "/1").exists());
-            assertEquals(432, efs.length(filename, password));
+            assertEquals(420, efs.length(filename, password));
 
             // Length = 31 and starting at the end of the previous content
             content = "Here are some additional words.";
-            efs.write(filename, 432, content.getBytes(), password);
+            efs.write(filename, 420, content.getBytes(), password);
             
             assertEquals(true, new File(filename + "/0").exists());
             assertEquals(false, new File(filename + "/1").exists());
-            assertEquals(463, efs.length(filename, password));
+            assertEquals(451, efs.length(filename, password));
 
         }
         catch (Exception e) {
@@ -677,17 +677,17 @@ public class EFSTest extends TestCase {
 
             // Start at zero
             
-            // Length = 751
+            // Length = 739
             String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n"
-                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing.";
+                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of t";
 
-            // Length = 771 ==> Max size for file block == 752
+            // Length = 759 ==> Max size for file block == 740
             content += ". Here is some more.";
             efs.write(filename, 0, content.getBytes(), password);
 
             assertEquals(true, new File(filename + "/0").exists());
             assertEquals(true, new File(filename + "/1").exists());
-            assertEquals(771, efs.length(filename, password));
+            assertEquals(759, efs.length(filename, password));
             
         }
         catch (Exception e) {
@@ -742,23 +742,23 @@ public class EFSTest extends TestCase {
 
             // Start at zero
             
-            // Length = 1486
+            // Length = 1474
             String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n"
                     + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing."
                     + "It went through such rapid contortions that the little bear was forced to change his hold on it so many times he became confused in the darkness, and could not, for the life of him, tell whether he held the sheep right side up, or upside down. But that point was decided for him a moment later by the animal itself, who, with a sudden twist, jabbed its horns so hard into his lowest ribs that he gave a grunt of anger and disgust.\n"
-                    + "This is important to remember. Love isn't like pie. You don't need to divide it among all your friends and loved ones. No matter how much love you give, you can always give more. It doesn't run out, so don't try to hold back giving it as if it may one day run out. Give it freely and as much as you want.";
+                    + "This is important to remember. Love isn't like pie. You don't need to divide it among all your friends and loved ones. No matter how much love you give, you can always give more. It doesn't run out, so don't try to hold back giving it as if it may one day run out. Give it freely and as much ";
             efs.write(filename, 0, content.getBytes(), password);
             assertEquals(true, new File(filename + "/0").exists());
             assertEquals(true, new File(filename + "/1").exists());
-            assertEquals(1486, efs.length(filename, password));
+            assertEquals(1474, efs.length(filename, password));
             
-            // Length = 752 + 992 = 1744 ==> Max size for file block 0 and 1
-            content += "The words hadn't flowed from his fingers for the past few weeks. He never imagined he'd find himself with writer's block, but here he sat with a blank screen in front of him. That blank screen taunting him day after day had started to play with his mind.....";
+            // Length = 724 + 964 = 1688 ==> Max size for file block 0 and 1
+            content += "The words hadn't flowed from his fingers for the past few weeks. He never imagined he'd find himself with writer's block, but here he sat with a blank screen in front of him. That blank screen taunting him day afte";
             efs.write(filename, 0, content.getBytes(), password);
             assertEquals(true, new File(filename + "/0").exists());
             assertEquals(true, new File(filename + "/1").exists());
             assertEquals(false, new File(filename + "/2").exists());
-            assertEquals(1744, efs.length(filename, password));
+            assertEquals(1688, efs.length(filename, password));
             
         }
         catch (Exception e) {
@@ -865,9 +865,9 @@ public class EFSTest extends TestCase {
 
             // Start at zero
 
-            // Write some content
+            // Write some content, length = 739
             String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n"
-                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing.";
+                    + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of t";
             efs.write(filename, 0, content.getBytes(), password);
             
             // Try to read from 0 - 23
@@ -902,9 +902,11 @@ public class EFSTest extends TestCase {
             String content = "The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\n"
                     + "They decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing.";
 
-            // Length = 771 ==> Max size for file block == 752
+            // Length = 771 ==> Max size for file block == 736
             content += ". Here is some more.";
             efs.write(filename, 0, content.getBytes(), password);
+            assertEquals(true, new File(filename + "/0").exists());
+            assertEquals(true, new File(filename + "/1").exists());
 
             // Attempting to read across file blocks
             String result = new String(efs.read(filename, 726, 39, password));
@@ -1432,7 +1434,8 @@ public class EFSTest extends TestCase {
             assertEquals(true, efs.check_integrity(filename, password));
             
             byte[] result = efs.read(filename, 0, 850, password);
-            assertEquals(0, new String(result).compareTo("The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\nThey decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing.There was a leak in the boat. Nobody had yet noticed it, and nobody would for the next couple of ho"));
+            String resultS = new String(result);
+            assertEquals(0, resultS.compareTo("The wave roared towards them with speed and violence they had not anticipated. They both turned to run but by that time it was too late. The wave crashed into their legs sweeping both of them off of their feet. They now found themselves in a washing machine of saltwater, getting tumbled and not know what was up or down. Both were scared not knowing how this was going to end, but it was by far the best time of the trip thus far.\nThey decided to find the end of the rainbow. While they hoped they would find a pot of gold, neither of them truly believed that the mythical pot would actually be there. Nor did they believe they could actually find the end of the rainbow. Still, it seemed like a fun activity for the day and pictures of them chasing.There was a leak in the boat. Nobody had yet noticed it, and nobody would for the next couple of ho"));
             assertEquals(true, efs.check_integrity(filename, password));
 
         }

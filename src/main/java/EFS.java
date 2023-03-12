@@ -35,11 +35,12 @@ public class EFS extends Utility {
         PASSWORD_HASH,
         FEK,
         FILE_SIZE,
-        IV,
+        PADDING,
         METADATA_DIGEST,
         CONTENT,      // this is where the file contents start in file block 0
         FILE_DIGEST,
-        SECRETS       // this is effectively PASSWORD_HASH, FEK, FILE_SIZE, and PADDING
+        SECRETS,       // this is effectively PASSWORD_HASH, FEK, FILE_SIZE, and PADDING
+        IV
     }
     
     public static enum FieldInfo {
@@ -58,9 +59,9 @@ public class EFS extends Utility {
     private int N_SALT_BYTES = 16;
     private int N_FEK_BYTES = 16;
     private int N_LENGTH_BYTES = 4;
-    private int N_IV_BYTES = 12;
+    private int N_IV_BYTES = 16;
     private int AES_BLOCK_SIZE_BYTES = 16;
-    private int N_PBDFK2_ITERATIONS = 100000;
+    private int N_PBDFK2_ITERATIONS = 1000; //100000;
     private int DERIVED_KEY_LENGTH = 256;    // setting to same output length of SHA
 
     // This will be used for faster access to metadata field positions.
@@ -181,7 +182,19 @@ public class EFS extends Utility {
      * @return number of bytes
      */
     public int getSecretMetadataSize(boolean isEncrypted) throws Exception {
-        return getHashOutputSize(PASSWORD_HASH_ALG) + N_FEK_BYTES + N_LENGTH_BYTES + N_IV_BYTES;
+        int result = getHashOutputSize(PASSWORD_HASH_ALG) + N_FEK_BYTES + N_LENGTH_BYTES;
+        
+        if (isEncrypted)
+        {
+            // AES requires the message size to be a multiple of the key size.
+            // Account for the extra padding
+            while (result % N_FEK_BYTES != 0)
+            {
+                result += 1;
+            }
+        } 
+
+        return result;
     }
     
     /**
@@ -293,6 +306,18 @@ public class EFS extends Utility {
     }
     
     /**
+     * Returns the maximum size of a physical file.
+     * @param id
+     * @return the number of bytes
+     */
+    public int getMaxFileSize(int id) {
+        if (id == 0) {
+            return fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE);
+        }
+        return Config.BLOCK_SIZE - fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.SIZE) - fieldInfoMap.get(Field.IV).get(FieldInfo.SIZE);
+    }
+    
+    /**
      * Returns the number of physical files for a given file length.
      * @param fileLength
      * @return Number of physical files
@@ -302,8 +327,8 @@ public class EFS extends Utility {
             return 1;
         }
         
-        int firstFileMax = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE);
-        int extraFileMax = Config.BLOCK_SIZE - getHashOutputSize(FILE_DIGEST_ALG);
+        int firstFileMax = getMaxFileSize(0);
+        int extraFileMax = getMaxFileSize(1);
         int leftOver = fileLength - firstFileMax;
         
         if (leftOver <= 0) {
@@ -323,13 +348,13 @@ public class EFS extends Utility {
     public int convertToFilePosition(int byteId) throws Exception {
         int result = 0;
         
-        if (byteId < fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE)) {
+        if (byteId < getMaxFileSize(0)) {
             // We're in the file block 0
             result = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION) + byteId;
             
         } else {
             // Subtract off the first file block and mod by the max size of the other file blocks
-            result = (byteId - fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE)) % (Config.BLOCK_SIZE - getHashOutputSize(FILE_DIGEST_ALG));
+            result = (byteId - getMaxFileSize(0)) % getMaxFileSize(1);
         }
         return result;
     }
@@ -459,29 +484,35 @@ public class EFS extends Utility {
         fieldInfoMap.get(Field.FILE_SIZE).put(FieldInfo.SIZE, N_LENGTH_BYTES);
         index += N_LENGTH_BYTES;
         
-        fieldInfoMap.put(Field.IV, new HashMap<FieldInfo, Integer>());
-        fieldInfoMap.get(Field.IV).put(FieldInfo.POSITION, index);
-        fieldInfoMap.get(Field.IV).put(FieldInfo.SIZE, N_IV_BYTES);
-        index += N_IV_BYTES;
+        int padding = getSecretMetadataSize(true) - getSecretMetadataSize(false);
+        fieldInfoMap.put(Field.PADDING, new HashMap<FieldInfo, Integer>());
+        fieldInfoMap.get(Field.PADDING).put(FieldInfo.POSITION, index);
+        fieldInfoMap.get(Field.PADDING).put(FieldInfo.SIZE, padding);
+        index += padding;
+        
+        fieldInfoMap.put(Field.SECRETS, new HashMap<FieldInfo, Integer>());
+        fieldInfoMap.get(Field.SECRETS).put(FieldInfo.POSITION, fieldInfoMap.get(Field.PASSWORD_HASH).get(FieldInfo.POSITION));
+        fieldInfoMap.get(Field.SECRETS).put(FieldInfo.SIZE, getSecretMetadataSize(true));
         
         fieldInfoMap.put(Field.METADATA_DIGEST, new HashMap<FieldInfo, Integer>());
         fieldInfoMap.get(Field.METADATA_DIGEST).put(FieldInfo.POSITION, index);
         fieldInfoMap.get(Field.METADATA_DIGEST).put(FieldInfo.SIZE, getHashOutputSize(METADATA_DIGEST_ALG));
         index += getHashOutputSize(METADATA_DIGEST_ALG);
         
-        // File digest stored in last N bytes of file
         int fileDigestSize = getHashOutputSize(FILE_DIGEST_ALG);
-        fieldInfoMap.put(Field.FILE_DIGEST, new HashMap<FieldInfo, Integer>());
-        fieldInfoMap.get(Field.FILE_DIGEST).put(FieldInfo.POSITION, Config.BLOCK_SIZE - fileDigestSize);
-        fieldInfoMap.get(Field.FILE_DIGEST).put(FieldInfo.SIZE, fileDigestSize);
-        
-        fieldInfoMap.put(Field.SECRETS, new HashMap<FieldInfo, Integer>());
-        fieldInfoMap.get(Field.SECRETS).put(FieldInfo.POSITION, fieldInfoMap.get(Field.PASSWORD_HASH).get(FieldInfo.POSITION));
-        fieldInfoMap.get(Field.SECRETS).put(FieldInfo.SIZE, getSecretMetadataSize(true));
         
         fieldInfoMap.put(Field.CONTENT, new HashMap<FieldInfo, Integer>());
         fieldInfoMap.get(Field.CONTENT).put(FieldInfo.POSITION, index);
-        fieldInfoMap.get(Field.CONTENT).put(FieldInfo.SIZE, Config.BLOCK_SIZE - getHashOutputSize(FILE_DIGEST_ALG) - index);
+        fieldInfoMap.get(Field.CONTENT).put(FieldInfo.SIZE, Config.BLOCK_SIZE - fileDigestSize - N_IV_BYTES - index);
+        index += fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE);
+        
+        fieldInfoMap.put(Field.IV, new HashMap<FieldInfo, Integer>());
+        fieldInfoMap.get(Field.IV).put(FieldInfo.POSITION, index);
+        fieldInfoMap.get(Field.IV).put(FieldInfo.SIZE, N_IV_BYTES);
+        
+        fieldInfoMap.put(Field.FILE_DIGEST, new HashMap<FieldInfo, Integer>());
+        fieldInfoMap.get(Field.FILE_DIGEST).put(FieldInfo.POSITION, Config.BLOCK_SIZE - fileDigestSize);
+        fieldInfoMap.get(Field.FILE_DIGEST).put(FieldInfo.SIZE, fileDigestSize);
     }
     
     // END Utility functions
@@ -513,7 +544,7 @@ public class EFS extends Utility {
         if (iv == null) {
             iv = new byte[ivBytes]; // defaults to 0s
             
-        } else if (iv.length != ivBytes) {
+        } else if (iv.length < ivBytes) {
             throw new Exception("The IV length (" + iv.length + ") must be equal to " + ivBytes + " bytes.");
         }
         
@@ -542,10 +573,10 @@ public class EFS extends Utility {
             
             // Compute IV||CTR_i
             byte[] ctr = ByteBuffer.allocate(4).putInt(i).array();
-            byte[] concat = new byte[iv.length + ctr.length];
+            byte[] concat = new byte[ivBytes + ctr.length];
             
-            System.arraycopy(iv, 0, concat, 0, iv.length);
-            System.arraycopy(ctr, 0, concat, iv.length, ctr.length);
+            System.arraycopy(iv, 0, concat, 0, ivBytes); // Grabbing the first ivBytes
+            System.arraycopy(ctr, 0, concat, ivBytes, ctr.length);
             
             // Encrypt IV||CTR_i
             byte[] returntextBlock = encript_AES(concat, key);
@@ -656,6 +687,7 @@ public class EFS extends Utility {
      * @param id The id of the file block, e.g. 0, 1, 2, ...
      * @param ciphertext The entire file block with file contents encrypted.
      * @param key The key used in decryption.
+     * @param iv The iv used in decryption.
      * @return plaintext file contents
      */
     public byte[] decryptFileBlock(int id, byte[] ciphertext, byte[] key, byte[] iv) throws Exception {
@@ -666,17 +698,15 @@ public class EFS extends Utility {
         if (id == 0) {
             // We have metadata to subtract out
             startIndex = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION);
-            endIndex = startIndex + fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE);
+            endIndex = startIndex + getMaxFileSize(0);
             
         } else {
-            // aesCounter = block 0 size + (id - 1) * block 1 size 
-            aesCounter = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE) + (id - 1) * fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION);
-            endIndex = fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION);
+            endIndex = startIndex + getMaxFileSize(1);
         }
         
         return decryptByteArray(
                 Arrays.copyOfRange(ciphertext, startIndex, endIndex), 
-                key, 
+                key,
                 iv,
                 aesCounter);
     }
@@ -686,15 +716,11 @@ public class EFS extends Utility {
      * @param id The id of the file block, e.g. 0, 1, 2, ...
      * @param plaintext The plaintext contents of the file block.
      * @param key The key used in encryption.
+     * @param iv The IV used in encryption.
      * @return ciphertext file contents.
      */
     public byte[] encryptFileBlock(int id, byte[] plaintext, byte[] key, byte[] iv) throws Exception {
         int aesCounter = 0;
-        
-        // aesCounter = block 0 size + (id - 1) * block 1 size
-        if (id != 0) {
-            aesCounter = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE) + (id - 1) * fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION);
-        }
         
         return encryptByteArray(
                 plaintext,  
@@ -960,7 +986,7 @@ public class EFS extends Utility {
         }
         
         // Set username and password
-        set_username_password();
+        //set_username_password();
     }
 
     /**
@@ -1029,13 +1055,12 @@ public class EFS extends Utility {
             
             byte[] passwordHash = getPasswordHash(password, salt);
             byte[] fek = secureRandomNumber(N_FEK_BYTES);
-            byte[] iv = secureRandomNumber(fieldInfoMap.get(Field.IV).get(FieldInfo.SIZE));
+            byte[] iv = secureRandomNumber(N_IV_BYTES);
             byte[] fileLength = integerToBytes(0);  // We are not storing anything yet
             
             System.arraycopy(passwordHash,  0, secretData, 0,                                passwordHash.length);
             System.arraycopy(fek,           0, secretData, passwordHash.length,              fek.length);
             System.arraycopy(fileLength,    0, secretData, passwordHash.length + fek.length, fileLength.length);
-            System.arraycopy(iv,            0, secretData, passwordHash.length + fek.length + fileLength.length, iv.length);
 
             logger.fine("Deriving encryption key from password...");
             byte[] derivedKey = computeDerivedKey(password.getBytes(CHARACTER_SET), salt.getBytes(CHARACTER_SET));
@@ -1058,7 +1083,7 @@ public class EFS extends Utility {
 
             // Encrypt empty file contents
             logger.fine("Encrypting file contents with FEK...");
-            byte[] encryptedFileContents = encryptFileBlock(0, new byte[Config.BLOCK_SIZE - allMetadataSize], fek, iv);
+            byte[] encryptedFileContents = encryptFileBlock(0, new byte[getMaxFileSize(0)], fek, iv);
 
             int fileContentsIndex = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION); 
             System.arraycopy(encryptedFileContents, 0, toWrite, fileContentsIndex, encryptedFileContents.length);
@@ -1069,6 +1094,8 @@ public class EFS extends Utility {
             logger.fine("Computing metadata digest using derived key...");
             byte[] metadataDigest = computeMetadataDigest(toWrite, derivedKey);
             writeToField(toWrite, Field.METADATA_DIGEST, metadataDigest);
+            
+            writeToField(toWrite, Field.IV, iv);
             
             logger.fine("Computing file digest using derived key...");
             byte[] fileDigest = computeFileDigest(toWrite, derivedKey);
@@ -1173,7 +1200,6 @@ public class EFS extends Utility {
             byte[] derivedKey = computeDerivedKey(password.getBytes(CHARACTER_SET), salt);
             byte[] plaintextMetadata = decryptMetadata(metadata, derivedKey);
             byte[] fek = getField(plaintextMetadata, Field.FEK, false);
-            byte[] iv = getField(plaintextMetadata, Field.IV, false);
 
             if (!isCorrectPassword(plaintextMetadata, password)) {
                 throw new PasswordIncorrectException();
@@ -1184,7 +1210,7 @@ public class EFS extends Utility {
             fileLength = bytesToInteger(getField(plaintextMetadata, Field.FILE_SIZE, false));
 
             if ((starting_position + len) > fileLength) {
-                throw new Exception("Starting position for write (" + starting_position
+                throw new Exception("Starting position for read (" + starting_position
                         + ") and length (" + len + ") is >= the current file length (" + fileLength + ").");
             }
             
@@ -1208,6 +1234,7 @@ public class EFS extends Utility {
                 
                 File currentFileBlock = new File(root, Integer.toString(i));
                 byte[] encryptedContents = read_from_file(currentFileBlock);
+                byte[] iv = getField(encryptedContents, Field.IV, false);
                 
                 // Decrypt the file
                 String temp = byteArray2String(decryptFileBlock(i, encryptedContents, fek, iv));
@@ -1270,7 +1297,6 @@ public class EFS extends Utility {
             byte[] derivedKey = computeDerivedKey(password.getBytes(CHARACTER_SET), salt);
             byte[] plaintextMetadata = decryptMetadata(metadata, derivedKey);
             byte[] fek = getField(plaintextMetadata, Field.FEK, false);
-            byte[] iv = getField(plaintextMetadata, Field.IV, false);
 
             if (!isCorrectPassword(plaintextMetadata, password)) {
                 throw new PasswordIncorrectException();
@@ -1292,7 +1318,7 @@ public class EFS extends Utility {
             File root = new File(file_name);
             
             // How many content bytes in a file?
-            int nContentBytes = Config.BLOCK_SIZE - fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.SIZE);
+            int nContentBytes = getMaxFileSize(1);
             
             // Compute the file block endpoints.
             // starting_position starts at 0, and file blocks start at 0.
@@ -1316,9 +1342,11 @@ public class EFS extends Utility {
                 
                 File currentFileBlock = new File(root, Integer.toString(i));
                 byte[] encryptedContents = null;
+                byte[] iv = null;
                 
                 if (currentFileBlock.exists()) {
                     encryptedContents = read_from_file(currentFileBlock);
+                    iv = getField(encryptedContents, Field.IV, false);
                 }
                 
                 // The first file has fewer available bytes for writing
@@ -1382,7 +1410,7 @@ public class EFS extends Utility {
                 sp = ep;
                 ep += nContentBytes; 
                 
-                int padding = fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION) - newContentString.length();
+                int padding = getMaxFileSize(1) - newContentString.length();
                 if (i == 0) {
                     padding = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE) - newContentString.length() ;
                 } 
@@ -1396,7 +1424,14 @@ public class EFS extends Utility {
                 
                 byte[] toWrite = new byte[Config.BLOCK_SIZE];
                 
+                // Generate a new IV
+                iv = secureRandomNumber(N_IV_BYTES);
+                
+                // Encrypt the file
                 byte[] newEncryptedContents = encryptFileBlock(i, newContentString.getBytes(), fek, iv);
+                
+                // Store the new IV
+                writeToField(toWrite, Field.IV, iv);
                 
                 if (i == 0) {
                     System.arraycopy(encryptedContents,    0, toWrite, 0, fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION)); // copy metadata
@@ -1528,7 +1563,6 @@ public class EFS extends Utility {
             byte[] derivedKey = computeDerivedKey(password.getBytes(CHARACTER_SET), salt);
             byte[] plaintextMetadata = decryptMetadata(metadata, derivedKey);
             byte[] fek = getField(plaintextMetadata, Field.FEK, false);
-            byte[] iv = getField(plaintextMetadata, Field.IV, false);
 
             if (!isCorrectPassword(plaintextMetadata, password)) {
                 throw new PasswordIncorrectException();
@@ -1552,6 +1586,7 @@ public class EFS extends Utility {
             File root = new File(file_name);
             File fileBlock = new File(root, Integer.toString(endFileBlock));
             byte[] encryptedContents = read_from_file(fileBlock);
+            byte[] iv = getField(encryptedContents, Field.IV, false);
             
             // Decrypt the file and slice it
             String contents = byteArray2String(decryptFileBlock(endFileBlock, encryptedContents, fek, iv));
@@ -1563,9 +1598,9 @@ public class EFS extends Utility {
             }
             
             // Pad the contents
-            int padding = fieldInfoMap.get(Field.FILE_DIGEST).get(FieldInfo.POSITION) - contents.length();
+            int padding = getMaxFileSize(1) - contents.length();
             if (endFileBlock == 0) {
-                padding = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE) - contents.length() ;
+                padding = fieldInfoMap.get(Field.CONTENT).get(FieldInfo.SIZE) - contents.length();
             } 
 
             for (int p = 0; p < padding; p++) {
@@ -1576,7 +1611,15 @@ public class EFS extends Utility {
             // Step 3) Encrypt the updated file block contents and write to new array
             
             byte[] toWrite = new byte[Config.BLOCK_SIZE];
+            
+            // Generate a new IV
+            iv = secureRandomNumber(N_IV_BYTES);
+            
+            // Encrypt it
             byte[] newEncryptedContents = encryptFileBlock(endFileBlock, contents.getBytes(), fek, iv);
+            
+            // Store the new IV
+            writeToField(toWrite, Field.IV, iv);
             
             if (endFileBlock == 0) {
                 System.arraycopy(encryptedContents,    0, toWrite, 0, fieldInfoMap.get(Field.CONTENT).get(FieldInfo.POSITION)); // copy metadata
