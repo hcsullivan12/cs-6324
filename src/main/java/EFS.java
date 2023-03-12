@@ -61,7 +61,7 @@ public class EFS extends Utility {
     private int N_LENGTH_BYTES = 4;
     private int N_IV_BYTES = 16;
     private int AES_BLOCK_SIZE_BYTES = 16;
-    private int N_PBDFK2_ITERATIONS = 1000; //100000;
+    private int N_PBDFK2_ITERATIONS = 100000;
     private int DERIVED_KEY_LENGTH = 256;    // setting to same output length of SHA
 
     // This will be used for faster access to metadata field positions.
@@ -986,7 +986,7 @@ public class EFS extends Utility {
         }
         
         // Set username and password
-        //set_username_password();
+        set_username_password();
     }
 
     /**
