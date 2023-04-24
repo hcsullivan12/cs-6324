@@ -11,22 +11,28 @@
 			die('<p>You did not fill in a required field.
 			Please go back and try again!</p>');
 		}
-		
-		$passwordHash = hash('sha256', $_POST['password']);
-		
+
+                include('util.php');
+
 		$check = mysql_query("SELECT * FROM users WHERE username = '".$_POST['username']."'")or die(mysql_error());
 		
  		//Gives error if user already exist
  		$check2 = mysql_num_rows($check);
 		if ($check2 == 0) {
 			die("<p>Sorry, user name does not exisits.</p>");
-		}
-		else
-		{
+
+		} else {
+                    $row = mysql_fetch_assoc($check);
+
+                    if (password_verify($_POST['password'], $row['pass'])) {
 			$hour = time() + 3600; 
 			setcookie(hackme, $_POST['username'], $hour); 
-			setcookie(hackme_pass, $passwordHash, $hour);
+			setcookie(hackme_pass, $row['pass'], $hour);
 			header("Location: members.php");
+
+                    } else {
+                        die('<p>Incorrect password!</p>');
+                    }
 		}
 	}
 		?>  

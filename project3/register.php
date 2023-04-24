@@ -23,9 +23,10 @@
  				die('<p>You did not fill in a required field.
 				Please go back and try again!</p>');
  			}
+		        
+                        include('util.php');
+                        $passwordHash = get_secure_password($_POST['password']);
 		
-			$passwordHash = hash('sha256', $_POST['password']);
-			
 			$check = mysql_query("SELECT * FROM users WHERE username = '".$_POST['uname']."'")or die(mysql_error());
  
  		//Gives error if user already exist
