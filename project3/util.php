@@ -16,15 +16,14 @@
     }
 
     function start_session() {
-        if (session_status() == PHP_SESSION_NONE) {
-            session_start([
-                'cookie_lifetime' => 0,
-                'use_only_cookies' => 1,
-                'use_strict_mode' => 1,
-                'cookie_httponly' => 1
-            ]);
-        }
+        session_start([
+            'cookie_lifetime' => 0,
+            'use_only_cookies' => 1,
+            'use_strict_mode' => 1,
+            'cookie_httponly' => 1
+        ]);
 
+        
         $sessionTimeout  = 300;
         $activityTimeout = 600;
 
@@ -32,6 +31,7 @@
             session_unset();
             session_destroy();
             header("Location: index.php"); 
+            exit;
 
         } else {
             $_SESSION['LAST_ACTIVITY'] = time();
