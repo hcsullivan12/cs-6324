@@ -37,12 +37,12 @@
 	<div class="post">
 	<div class="post-bgtop">
 	<div class="post-bgbtm">
-		<h2 class="title"><a href="show.php?pid=<?php echo $thisthread[id] ?>"><?php echo $thisthread[title]?></a></h2>
-							<p class="meta"><span class="date"> <?php echo date('l, d F, Y',$thisthread[date]) ?> - Posted by <a href="#"><?php echo $thisthread[username] ?> </a></p>
+		<h2 class="title"><a href="show.php?pid=<?php echo htmlspecialchars($thisthread[id], ENT_QUOTES, 'UTF-8') ?>"><?php echo htmlspecialchars($thisthread[title], ENT_QUOTES, 'UTF-8')?></a></h2>
+							<p class="meta"><span class="date"> <?php echo date('l, d F, Y',$thisthread[date]) ?> - Posted by <a href="#"><?php echo htmlspecialchars($thisthread[username], ENT_QUOTES, 'UTF-8') ?> </a></p>
          
          <div class="entry">
 			
-            <?php echo $thisthread[message] ?>
+            <?php echo htmlspecialchars($thisthread[message], ENT_QUOTES, 'UTF-8') ?>
             					
 		 </div>
          
