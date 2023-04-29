@@ -1,7 +1,9 @@
 <?php
 	// Connects to the Database 
 	include('connect.php');
+        include('util.php');
 	connect(); 
+        start_session();
 	
 	//if the login form is submitted 
 	if (!isset($_GET['pid'])) {
@@ -20,11 +22,12 @@
 <link href="style.css" rel="stylesheet" type="text/css" media="screen" />
 <?php
 	include('header.php');
-	if(!isset($_COOKIE['hackme'])){
+
+	if(!isset($_SESSION['LOGGED_IN_USER'])){
 		 die('Why are you not logged in?!');
 	}else
 	{
-		print("<p>Logged in as <a>$_COOKIE[hackme]</a></p>");
+		print("<p>Logged in as <a>$_SESSION[LOGGED_IN_USER]</a></p>");
 	}
 ?>
 <?php
@@ -48,7 +51,7 @@
 	</div>
     
     <?php
-		if ($_COOKIE[hackme] == $thisthread[username])
+		if ($_SESSION[LOGGED_IN_USER] == $thisthread[username])
 		{
 	?>
     	<a href="show.php?delpid=<?php echo $thisthread[id]?>">DELETE</a>

@@ -1,7 +1,9 @@
 <?php
 // Connects to the Database 
 	include('connect.php');
+        include('util.php');
 	connect();
+        start_session();
 	
 	//if the login form is submitted 
 	if (isset($_POST['post_submit'])) {
@@ -13,9 +15,9 @@
 			Please go back and try again!</p>');
 		}
 		
-		mysql_query("INSERT INTO threads (username, title, message, date) VALUES('".$_COOKIE['hackme']."', '". $_POST['title']."', '". $_POST[message]."', '".time()."')")or die(mysql_error());
+		mysql_query("INSERT INTO threads (username, title, message, date) VALUES('".$_SESSION['LOGGED_IN_USER']."', '". $_POST['title']."', '". $_POST[message]."', '".time()."')")or die(mysql_error());
 		
-		//mysql_query("INSERT INTO threads (username, title, message, date) VALUES('".$_COOKIE['hackme']."', '". $_POST['title']."', '". $_POST[message]."', CURDATE() )")or die(mysql_error());
+		//mysql_query("INSERT INTO threads (username, title, message, date) VALUES('".$_SESSION['LOGGED_IN_USER']."', '". $_POST['title']."', '". $_POST[message]."', CURDATE() )")or die(mysql_error());
 		
 		
 		header("Location: members.php");
@@ -35,16 +37,17 @@
 		<div class="post-bgbtm">
         <h2 class = "title">hackme bulletin board</h2>
         	<?php
-            if(!isset($_COOKIE['hackme'])){
+
+            if(!isset($_SESSION['LOGGED_IN_USER'])){
 				 die('Why are you not logged in?!');
 			}else
 			{
-				print("<p>Logged in as <a>$_COOKIE[hackme]</a></p>");
+				print("<p>Logged in as <a>$_SESSION[LOGGED_IN_USER]</a></p>");
 			}
 			?>
             
             <h2 class="title">NEW POST</h2>
-            <p class="meta">by <a href="#"><?php echo $_COOKIE['hackme'] ?> </a></p>
+            <p class="meta">by <a href="#"><?php echo $_SESSION['LOGGED_IN_USER'] ?> </a></p>
             <p> do not leave any fields blank... </p>
             
             <form method="post" action="post.php">

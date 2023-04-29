@@ -5,7 +5,7 @@
 	<div id="menu">
 		<ul>
         <?php
-			if(!isset($_COOKIE['hackme'])){ ?>
+			if(!isset($_SESSION['LOGGED_IN_USER'])){ ?>
 				<li><a href="index.php">Login</a></li>
 				<li><a href="register.php">Register</a></li>
         <?php

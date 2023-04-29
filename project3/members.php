@@ -1,7 +1,12 @@
 <?php
-	// Connects to the Database 
 	include('connect.php');
+        include('util.php');
+
+        // Connect to database
 	connect();
+
+        // Get session
+        start_session();
 	
 	//if the login form is submitted 
 	if (isset($_POST['submit'])) {
@@ -11,8 +16,6 @@
 			die('<p>You did not fill in a required field.
 			Please go back and try again!</p>');
 		}
-
-                include('util.php');
 
 		$check = mysql_query("SELECT * FROM users WHERE username = '".$_POST['username']."'")or die(mysql_error());
 		
@@ -25,9 +28,7 @@
                     $row = mysql_fetch_assoc($check);
 
                     if (password_verify($_POST['password'], $row['pass'])) {
-			$hour = time() + 3600; 
-			setcookie(hackme, $_POST['username'], $hour); 
-			setcookie(hackme_pass, $row['pass'], $hour);
+                        log_in_session($_POST['username']);
 			header("Location: members.php");
 
                     } else {
@@ -50,11 +51,12 @@
 		<div class="post-bgbtm">
         <h2 class = "title">hackme bulletin board</h2>
         	<?php
-            if(!isset($_COOKIE['hackme'])){
+
+            if(!isset($_SESSION['LOGGED_IN_USER'])){
 				 die('Why are you not logged in?!');
 			}else
 			{
-				print("<p>Logged in as <a>$_COOKIE[hackme]</a></p>");
+				print("<p>Logged in as <a>$_SESSION[LOGGED_IN_USER]</a></p>");
 			}
 			?>
         </div>

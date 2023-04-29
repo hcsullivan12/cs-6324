@@ -1,8 +1,10 @@
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 
 <?php
-        include('connect.php');
-        if(isset($_COOKIE['hackme']))
+	include('util.php');
+        start_session();
+
+        if(isset($_SESSION['LOGGED_IN_USER']))
         {
                 header("Location: members.php");
         }
@@ -26,7 +28,7 @@
 			<h2 class="title"><a href="#">Welcome to hackme </a></h2>
 				<div class="entry">
 		<?php
-			if(!isset($_COOKIE['hackme']))
+			if(!isset($_SESSION['LOGGED_IN_USER']) )
 				{
 				?>
 	           	<form method="post" action="members.php">
