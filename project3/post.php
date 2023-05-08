@@ -15,7 +15,7 @@
 			Please go back and try again!</p>');
 		}
 		
-		mysql_query("INSERT INTO threads (username, title, message, date) VALUES('".$_SESSION['LOGGED_IN_USER']."', '". $_POST['title']."', '". $_POST[message]."', '".time()."')")or die(mysql_error());
+		mysql_query("INSERT INTO threads (username, title, message, date) VALUES('".$_SESSION['LOGGED_IN_USER']."', '". mysql_real_escape_string($_POST['title'])."', '". mysql_real_escape_string($_POST[message])."', '".time()."')")or die(mysql_error());
 		
 		//mysql_query("INSERT INTO threads (username, title, message, date) VALUES('".$_SESSION['LOGGED_IN_USER']."', '". $_POST['title']."', '". $_POST[message]."', CURDATE() )")or die(mysql_error());
 		

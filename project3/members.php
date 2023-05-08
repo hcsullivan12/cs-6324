@@ -17,7 +17,7 @@
 			Please go back and try again!</p>');
 		}
 
-		$check = mysql_query("SELECT * FROM users WHERE username = '".$_POST['username']."'")or die(mysql_error());
+		$check = mysql_query("SELECT * FROM users WHERE username = '".mysql_real_escape_string($_POST['username'])."'")or die(mysql_error());
 		
  		//Gives error if user already exist
  		$check2 = mysql_num_rows($check);
